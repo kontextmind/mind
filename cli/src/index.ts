@@ -75,18 +75,72 @@ async function main() {
       });
       return;
     }
+    case "append": {
+      // usage: kontext append --title "..." --content "..." [--org] [--supersedes path]
+      const title = argAfter("--title");
+      const content = argAfter("--content");
+      if (!title || !content) {
+        return fail('usage: kontext append --title "..." --content "..." [--org] [--supersedes path]');
+      }
+      await withClient(async (c) => {
+        const res = await c.callTool({
+          name: "km_append",
+          arguments: {
+            title,
+            content,
+            classification: rest.includes("--org") ? "org" : "project",
+            supersedes: argAfter("--supersedes"),
+          },
+        });
+        console.log(toolText(res as never));
+      });
+      return;
+    }
+    case "review": {
+      // usage: kontext review [list [--kind k]] | [resolve <id> <promote|research|skip> [--reason "..."]]
+      await withClient(async (c) => {
+        if (rest[0] === "resolve") {
+          const [, id, verdict] = rest;
+          if (!id || !verdict) return fail("usage: kontext review resolve <id> <promote|research|skip> [--reason \"...\"]");
+          const res = await c.callTool({
+            name: "km_review",
+            arguments: { action: "resolve", id, verdict, reason: argAfter("--reason") },
+          });
+          console.log(toolText(res as never));
+          return;
+        }
+        const res = await c.callTool({
+          name: "km_review",
+          arguments: { action: "list", kind: argAfter("--kind") },
+        });
+        const parsed = JSON.parse(toolText(res as never));
+        for (const item of parsed.items ?? []) {
+          const state = item.resolved_at ? `[${item.verdict}]` : "[pending]";
+          console.log(`${state} ${item.kind.padEnd(10)} ${item.id}  ${item.title}`);
+        }
+        if (!(parsed.items ?? []).length) console.log("queue empty");
+      });
+      return;
+    }
     default:
-      console.log(`kontext — KontextMind (phase 1a demo surface)
+      console.log(`kontext — KontextMind (phase 1b demo surface)
 
 usage:
-  kontext search <query>   search the mind (provenance + staleness per hit)
-  kontext read <path>      read one page
-  kontext status           indexed SHA vs HEAD, trust mode, session
+  kontext search <query>                    search the mind (provenance + staleness per hit)
+  kontext read <path>                       read one page
+  kontext status                            indexed SHA vs HEAD, trust mode, session
+  kontext append --title T --content C      file a learning draft (secret-gated)
+  kontext review [list|resolve ...]         work the review queue
 
 env:
   KM_URL    MCP endpoint   (default http://127.0.0.1:3000/mcp)
   KM_TOKEN  bearer token   (default km-demo-local)`);
   }
+}
+
+function argAfter(flag: string): string | undefined {
+  const i = rest.indexOf(flag);
+  return i >= 0 ? rest[i + 1] : undefined;
 }
 
 function fail(msg: string): never {
