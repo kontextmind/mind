@@ -9,13 +9,15 @@
  * denied everywhere.
  *
  * Requires TEST_DATABASE_URL (or DATABASE_URL) pointing at a disposable
- * Postgres 15+ with migrations applied. Skips when absent (local dev without
- * DB); CI always provides one.
+ * Postgres 15+ with migrations applied; falls back to the local compose DB.
+ * This is a MERGE BLOCKER, so it must never skip silently — it runs, or it
+ * fails loudly. Opting out takes an explicit KM_SKIP_DB_TESTS=1.
  */
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
 import postgres from "postgres";
+import { resolveDbUrl } from "../support/db";
 
-const url = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
+const url = resolveDbUrl("isolation harness");
 const describeMaybe = url ? describe : describe.skip;
 
 const ORG_A = "org_aaaaaaaaaaaaaaaaaaaaaaaa";
@@ -69,6 +71,9 @@ describeMaybe("isolation harness", () => {
       ('page_a1aaaaaaaaaaaaaaaaaaaaa1', 'repo_aaaaaaaaaaaaaaaaaaaaaaa1', ${NS_A1}, 'wiki/a1.md', 'verified', 'sha1'),
       ('page_a2aaaaaaaaaaaaaaaaaaaaa1', 'repo_aaaaaaaaaaaaaaaaaaaaaaa1', ${NS_A2}, 'wiki/a2.md', 'verified', 'sha2')
       on conflict (id) do nothing`;
+    await sql`insert into invites (id, org_id, email, role, token, invited_by) values
+      ('inv_aaaaaaaaaaaaaaaaaaaaaaa1', ${ORG_A}, 'a@example.com', 'member', 'tok_a_fixture', ${USER})
+      on conflict (id) do nothing`;
   });
 
   afterAll(async () => {
@@ -114,6 +119,45 @@ describeMaybe("isolation harness", () => {
       asClaims(claims([NS_A1]), (tx) =>
         tx`insert into checkpoints (id, namespace_id, author_id, note)
            values ('cp_deny_test', ${NS_A2}, ${USER}, 'should be denied')`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  test("invites: org A principal sees own invites only", async () => {
+    const rows = await asClaims(claims([NS_A1]), (tx) => tx`select * from invites`);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) expect(r.org_id).toBe(ORG_A);
+  });
+
+  test("invites: org B principal is denied org A invites", async () => {
+    const rows = await asClaims(claims([NS_B1], "human", ORG_B), (tx) => tx`select * from invites`);
+    expect(rows.length).toBe(0);
+  });
+
+  test("invites: service kind is denied", async () => {
+    const rows = await asClaims(claims([NS_A1], "service"), (tx) => tx`select * from invites`);
+    expect(rows.length).toBe(0);
+  });
+
+  test("invites: no claims = no access", async () => {
+    const rows = await app.begin(async (tx) => tx`select * from invites`);
+    expect(rows.length).toBe(0);
+  });
+
+  test("invites: cross-org write is denied", async () => {
+    await expect(
+      asClaims(claims([NS_A1]), (tx) =>
+        tx`insert into invites (id, org_id, email, role, token, invited_by)
+           values ('inv_deny_test', ${ORG_B}, 'b@example.com', 'member', 'tok_deny', ${USER})`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  test("repos: cross-org registration is denied", async () => {
+    await expect(
+      asClaims(claims([NS_A1]), (tx) =>
+        tx`insert into repos (id, org_id, github_full)
+           values ('repo_deny_test', ${ORG_B}, 'test/mind-deny')`,
       ),
     ).rejects.toThrow();
   });

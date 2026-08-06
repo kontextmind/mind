@@ -5,6 +5,12 @@ build/
 .env
 .env.*
 !.env.example
+# direnv: holds real tokens. `.env.*` does NOT match `.envrc`.
+.envrc
+# Local codacy-cli config — machine-specific, never shared.
+.codacy/
+# Local agent tooling config (MCP endpoints + local tokens).
+.grok/
 .DS_Store
 .kontextmind/local/
 coverage/

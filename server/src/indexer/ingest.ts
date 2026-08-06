@@ -47,12 +47,14 @@ export async function ingestRepo(
 
     const { meta, chunks } = chunkPage(content);
     const pageId = `page_${createHash("sha1").update(`${repoId}:${entry.path}`).digest("hex").slice(0, 26)}`;
-    const checks = meta.supersededBy ? { superseded_by: meta.supersededBy } : {};
+    // Pre-bind as a JSON string (same pattern as write-tools): postgres.js
+    // strict typing rejects raw object interpolation in template fragments.
+    const checksJson = JSON.stringify(meta.supersededBy ? { superseded_by: meta.supersededBy } : {});
 
     await sql.begin(async (tx) => {
       await tx`insert into pages (id, repo_id, namespace_id, path, title, status, commit_sha, sources, checks, indexed_at)
         values (${pageId}, ${repoId}, ${namespaceId}, ${entry.path},
-                ${meta.title ?? entry.path}, ${pageStatus(meta)}, ${head}, '[]', ${checks}, now())
+                ${meta.title ?? entry.path}, ${pageStatus(meta)}, ${head}, '[]', cast(${checksJson} as jsonb), now())
         on conflict (repo_id, path) do update set
           title = excluded.title, status = excluded.status, commit_sha = excluded.commit_sha,
           checks = excluded.checks, indexed_at = now()`;
