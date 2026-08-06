@@ -86,10 +86,26 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
   });
 
   afterAll(async () => {
-    server?.stop(true);
-    await admin?.end({ timeout: 5 });
-    rmSync(mindPath, { recursive: true, force: true });
-    await disposable?.drop();
+    // Each step is independent. A throw in one must not strand the others:
+    // rmSync on the seeded git repo can fail with EBUSY/EPERM on Windows, and
+    // when it ran before the drop it left a stray km_test_* database behind.
+    // The database is the costlier leak, so it goes first.
+    try {
+      server?.stop(true);
+    } catch {}
+    try {
+      await admin?.end({ timeout: 5 });
+    } catch {}
+    try {
+      await disposable?.drop();
+    } catch (err) {
+      console.warn(`failed to drop ${disposable?.name}: ${(err as Error).message}`);
+    }
+    try {
+      rmSync(mindPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    } catch (err) {
+      console.warn(`failed to remove ${mindPath}: ${(err as Error).message}`);
+    }
   }, 20000);
 
   async function connect(token = "km-demo-local"): Promise<Client> {

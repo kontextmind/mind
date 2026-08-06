@@ -75,9 +75,19 @@ describeMaybe("isolation harness", () => {
   });
 
   afterAll(async () => {
-    await app?.end();
-    await sql?.end();
-    await disposable?.drop();
+    // Independent steps: a throw while closing a pool must not skip the drop
+    // and strand a km_test_* database.
+    try {
+      await app?.end();
+    } catch {}
+    try {
+      await sql?.end();
+    } catch {}
+    try {
+      await disposable?.drop();
+    } catch (err) {
+      console.warn(`failed to drop ${disposable?.name}: ${(err as Error).message}`);
+    }
   }, 20000);
 
   test("service kind is denied on tenant tables", async () => {
