@@ -9,13 +9,14 @@
  * explicit KM_SKIP_DB_TESTS=1 (see tests/support/db.ts).
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import postgres from "postgres";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { resolveDbUrl } from "../../tests/support/db";
+import { resolveDbUrl, createDisposableDb, type DisposableDb } from "../../tests/support/db";
 import { loadConfig, DEMO_ORG } from "../src/config";
 import { bootDemo, createFetch } from "../src/app";
 
@@ -30,28 +31,23 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
   let server: ReturnType<typeof Bun.serve>;
   let admin: postgres.Sql;
   let baseUrl: string;
+  let disposable: DisposableDb;
   const repoRoot = join(import.meta.dir, "..", "..");
-  const mindPath = join(repoRoot, "demo", "mind");
-
-  async function migrateIfNeeded(): Promise<void> {
-    const hasMarker = await admin`select to_regclass('_migrations') as m`;
-    if (hasMarker[0]?.m) return;
-    const dir = join(repoRoot, "migrations");
-    for (const f of readdirSync(dir).filter((x) => x.endsWith(".sql")).sort()) {
-      await admin.unsafe(readFileSync(join(dir, f), "utf8"));
-    }
-  }
+  // Disposable mind: this suite commits to whatever mind it is pointed at
+  // (drafts, promotions, supersede edges). Pointed at demo/mind it permanently
+  // accumulated an e2e draft + promoted page per run — 48 files and 72 review
+  // rows before the first GC. Each run now seeds its own throwaway clone from
+  // scripts/seed-mind.ts, which produces the same two dated commits, so the
+  // fixture is identical but nothing outlives the run.
+  const mindPath = mkdtempSync(join(tmpdir(), "km-e2e-mind-"));
 
   beforeAll(async () => {
-    admin = postgres(dbUrl!, { max: 2, onnotice: () => {} });
-    // Request-path role must exist with the demo password (CI service
-    // containers have no initdb scripts).
-    await admin`do $$ begin
-      if not exists (select 1 from pg_roles where rolname = 'km_app') then
-        create role km_app login password 'km-demo-local';
-      end if;
-    end $$`;
-    await migrateIfNeeded();
+    // Disposable database, mirroring the disposable mind: nothing this run
+    // writes (review_items, tombstoned pages) outlives it, and no fixture can
+    // leak into another run.
+    disposable = await createDisposableDb(dbUrl!, "mcp");
+    process.env.DATABASE_URL = disposable.url; // bootDemo/loadConfig read this
+    admin = postgres(disposable.url, { max: 2, onnotice: () => {} });
 
     // Second-tenant fixture: org B with a page that shares a search term.
     await admin`insert into orgs (id, slug, name) values (${ORG_B}, 'org-b', 'Org B')
@@ -68,14 +64,14 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
               'KontextMind tenant B confidential content about supabase and postgres', 'shab')
       on conflict (id) do nothing`;
 
-    // Seed the demo mind if missing.
-    if (!existsSync(join(mindPath, ".git"))) {
-      const res = spawnSync("bun", ["run", join(repoRoot, "scripts", "seed-mind.ts")], {
-        cwd: repoRoot,
-        encoding: "utf8",
-      });
-      if (res.status !== 0) throw new Error(`seed failed: ${res.stderr}`);
-    }
+    // Seed this run's throwaway mind. Always seeds: the temp dir is new, and
+    // seed-mind.ts wipes and re-creates its target with deterministic dated
+    // commits, so every run starts from a byte-identical fixture.
+    const res = spawnSync("bun", ["run", join(repoRoot, "scripts", "seed-mind.ts"), mindPath], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    if (res.status !== 0) throw new Error(`seed failed: ${res.stderr}`);
 
     const cfg: ReturnType<typeof loadConfig> = {
       ...loadConfig(),
@@ -89,15 +85,27 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
     baseUrl = `http://127.0.0.1:${server.port}/mcp`;
   });
 
-  // Pages a test mutated that must return to their committed baseline, or the
-  // suite is not re-runnable. Restored in afterAll: a mid-suite commit moves
-  // HEAD past the index and drifts every later read-your-writes assertion.
-  const pagesToRestore = new Set<string>();
-
   afterAll(async () => {
-    for (const rel of pagesToRestore) restoreMindPage(rel);
-    server?.stop(true);
-    await admin?.end({ timeout: 5 });
+    // Each step is independent. A throw in one must not strand the others:
+    // rmSync on the seeded git repo can fail with EBUSY/EPERM on Windows, and
+    // when it ran before the drop it left a stray km_test_* database behind.
+    // The database is the costlier leak, so it goes first.
+    try {
+      server?.stop(true);
+    } catch {}
+    try {
+      await admin?.end({ timeout: 5 });
+    } catch {}
+    try {
+      await disposable?.drop();
+    } catch (err) {
+      console.warn(`failed to drop ${disposable?.name}: ${(err as Error).message}`);
+    }
+    try {
+      rmSync(mindPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    } catch (err) {
+      console.warn(`failed to remove ${mindPath}: ${(err as Error).message}`);
+    }
   }, 20000);
 
   async function connect(token = "km-demo-local"): Promise<Client> {
@@ -107,29 +115,6 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
     const client = new Client({ name: "test", version: "0.0.0" });
     await client.connect(transport);
     return client;
-  }
-
-  /** Restore a mind page to its committed baseline so the suite stays re-runnable. */
-  function restoreMindPage(rel: string): void {
-    const head = spawnSync("git", ["log", "-1", "--format=%H", "--", rel], {
-      cwd: mindPath,
-      encoding: "utf8",
-    });
-    spawnSync("git", ["checkout", `${head.stdout.trim()}~1`, "--", rel], {
-      cwd: mindPath,
-      encoding: "utf8",
-    });
-    spawnSync("git", ["commit", "-q", "-m", `test: restore ${rel} baseline`], {
-      cwd: mindPath,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        GIT_AUTHOR_NAME: "KontextMind",
-        GIT_AUTHOR_EMAIL: "mind@kontextmind.local",
-        GIT_COMMITTER_NAME: "KontextMind",
-        GIT_COMMITTER_EMAIL: "mind@kontextmind.local",
-      },
-    });
   }
 
   function parse(res: Awaited<ReturnType<Client["callTool"]>>): any {
@@ -211,17 +196,12 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
 
   test("km_append: clean learning → draft, review item, read-your-writes", async () => {
     const c = await connect();
-    // Unique per run: this suite commits to the shared demo mind and never
-    // GCs, so a fixed title accumulates duplicates until the new draft is
-    // pushed past km_search's default limit of 8 and read-your-writes fails
-    // for a reason that has nothing to do with read-your-writes.
-    const marker = `zt${Date.now().toString(36)}`;
     const res = parse(
       await c.callTool({
         name: "km_append",
         arguments: {
-          title: `e2e: bun lockfile workaround ${marker}`,
-          content: `On Windows, bun 1.3.10 fails to replace lockfiles; install with --no-save. (${marker})`,
+          title: "e2e: bun lockfile workaround",
+          content: "On Windows, bun 1.3.10 fails to replace lockfiles; install with --no-save.",
           classification: "project",
         },
       }),
@@ -231,7 +211,7 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
     expect(res.review_id).toBeTruthy();
     // read-your-writes: immediately searchable
     const found = parse(
-      await c.callTool({ name: "km_search", arguments: { query: `bun lockfile workaround ${marker}` } }),
+      await c.callTool({ name: "km_search", arguments: { query: "bun lockfile workaround" } }),
     );
     expect(found.hits.some((h: any) => h.path === res.path)).toBe(true);
     // review queue shows it pending
@@ -358,9 +338,6 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
     const fm = readFileSync(target, "utf8");
     expect(fm).toContain(`superseded_by: ${promoted.promoted_to}`);
     expect(fm).not.toContain("superseded_by: inbox/");
-    // Restore baseline: the clobber guard is working as designed, so leaving
-    // the edge behind would make this suite fail on its second run.
-    pagesToRestore.add("decisions/0005-demo-wedge.md");
     await c.close();
   });
 
@@ -458,6 +435,31 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
     const tools = res.tool_events.map((e: any) => e.tool);
     expect(tools).toContain("km_search");
     expect(tools).toContain("km_graph_expand");
+    await c.close();
+  });
+
+  test("km_graph: wikilink neighborhood at depth 1 and 2", async () => {
+    const c = await connect();
+    const d1 = parse(
+      await c.callTool({ name: "km_graph", arguments: { path: "decisions/0007-single-postgres.md" } }),
+    );
+    expect(
+      d1.edges.some(
+        (e: any) =>
+          e.from_page === "decisions/0007-single-postgres.md" &&
+          e.to_page === "decisions/0006-hosting-supabase.md",
+      ),
+    ).toBe(true);
+    expect(d1.nodes.some((n: any) => n.path === "decisions/0006-hosting-supabase.md")).toBe(true);
+    // depth 2 reaches 0005 via 0006
+    const d2 = parse(
+      await c.callTool({
+        name: "km_graph",
+        arguments: { path: "decisions/0007-single-postgres.md", depth: 2 },
+      }),
+    );
+    expect(d2.nodes.some((n: any) => n.path === "decisions/0005-demo-wedge.md")).toBe(true);
+    for (const e of d2.edges) expect(e.commit_sha).toMatch(/^[0-9a-f]{40}$/);
     await c.close();
   });
 

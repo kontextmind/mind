@@ -15,7 +15,7 @@
  */
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
 import postgres from "postgres";
-import { resolveDbUrl } from "../support/db";
+import { resolveDbUrl, createDisposableDb, type DisposableDb } from "../support/db";
 
 const url = resolveDbUrl("isolation harness");
 const describeMaybe = url ? describe : describe.skip;
@@ -30,6 +30,7 @@ const USER = "user_aaaaaaaaaaaaaaaaaaaaaaa1";
 describeMaybe("isolation harness", () => {
   let sql: postgres.Sql; // superuser: fixtures only
   let app: postgres.Sql; // km_app: claims queries — RLS actually applies
+  let disposable: DisposableDb;
 
   const claims = (namespaces: string[], kind = "human", org = ORG_A) =>
     JSON.stringify({ sub: USER, kind, org, namespaces, roles: {} });
@@ -41,17 +42,14 @@ describeMaybe("isolation harness", () => {
     });
 
   beforeAll(async () => {
-    sql = postgres(url!, { max: 2, onnotice: () => {} });
-    // Request-path role must exist (fresh CI databases have no initdb scripts).
-    await sql`do $$ begin
-      if not exists (select 1 from pg_roles where rolname = 'km_app') then
-        create role km_app login password 'km-demo-local';
-      end if;
-    end $$`;
-    await sql`grant usage on schema public to km_app`;
-    await sql`grant select, insert, update, delete on all tables in schema public to km_app`;
-    await sql`grant usage on all sequences in schema public to km_app`;
-    const appUrl = new URL(url!);
+    // Disposable database: this harness writes org A/B fixtures, which used to
+    // persist in the shared DB and surface as phantom pages (wiki/a1.md) in
+    // km_list long after the run. createDisposableDb applies the migrations —
+    // this suite never ran them itself and relied on the DB already being
+    // migrated.
+    disposable = await createDisposableDb(url!, "isolation");
+    sql = postgres(disposable.url, { max: 2, onnotice: () => {} });
+    const appUrl = new URL(disposable.url);
     appUrl.username = "km_app";
     appUrl.password = "km-demo-local";
     app = postgres(appUrl.toString(), { max: 2, onnotice: () => {} });
@@ -77,9 +75,20 @@ describeMaybe("isolation harness", () => {
   });
 
   afterAll(async () => {
-    await app?.end();
-    await sql?.end();
-  });
+    // Independent steps: a throw while closing a pool must not skip the drop
+    // and strand a km_test_* database.
+    try {
+      await app?.end();
+    } catch {}
+    try {
+      await sql?.end();
+    } catch {}
+    try {
+      await disposable?.drop();
+    } catch (err) {
+      console.warn(`failed to drop ${disposable?.name}: ${(err as Error).message}`);
+    }
+  }, 20000);
 
   test("service kind is denied on tenant tables", async () => {
     const rows = await asClaims(claims([NS_A1], "service"), (tx) =>
