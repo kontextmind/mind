@@ -1,0 +1,33 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: kontextmind
+      POSTGRES_USER: kontextmind
+      POSTGRES_PASSWORD: kontextmind-dev-only
+    ports:
+      - "5432:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ../migrations:/migrations:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kontextmind"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://kontextmind:kontextmind-dev-only@db:5432/kontextmind
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+
+volumes:
+  dbdata:
