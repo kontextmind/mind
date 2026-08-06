@@ -12,7 +12,7 @@ import { DEMO_ORG } from "./config";
 import { newSessionId } from "./session";
 import * as tools from "./tools";
 import { kmAppend, kmReview } from "./write-tools";
-import { kmChat } from "./tools";
+import { kmChat, kmGraph } from "./tools";
 import { kmInvite, kmProjectAdd, kmProjects, kmReindex } from "./admin-tools";
 
 export interface McpContext {
@@ -157,6 +157,22 @@ function buildServer(ctx: McpContext): McpServer {
           isError: true,
         };
       }
+    },
+  );
+
+  server.registerTool(
+    "km_graph",
+    {
+      description:
+        "Wikilink neighborhood for a page: edges (with commit SHA) and node details up to depth 2. Traversal only, no analytics. Dangling targets (linked but no page) are listed separately.",
+      inputSchema: {
+        path: z.string(),
+        depth: z.number().int().min(1).max(2).optional(),
+      },
+    },
+    async (args) => {
+      const res = await kmGraph(ctx.claims, args);
+      return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
     },
   );
 

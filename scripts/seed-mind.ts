@@ -206,7 +206,7 @@ status: verified
 
 # Decision 0007 — Single Postgres + Better Auth
 
-Supersedes decisions/0006. One self-contained unit: Bun/TS server + one
+Supersedes [[decisions/0006-hosting-supabase.md]]. One self-contained unit: Bun/TS server + one
 Postgres (pgvector, FTS, RLS), auth in-process via Better Auth. No Supabase,
 no Infisical, no WorkOS. Hard isolation = run another instance. The board
 converged on this after the owner asked for single-database simplicity with
@@ -227,6 +227,8 @@ Early design placed auth, RLS, and search on Supabase per org.
 
 > NOTE: this page is seeded as the deliberately-stale demo artifact. It is
 > superseded by decisions/0007 in the second seed commit.
+
+Context: the hosting question came out of [[decisions/0005-demo-wedge.md]].
 `,
 };
 

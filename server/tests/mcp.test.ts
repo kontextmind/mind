@@ -461,6 +461,31 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
     await c.close();
   });
 
+  test("km_graph: wikilink neighborhood at depth 1 and 2", async () => {
+    const c = await connect();
+    const d1 = parse(
+      await c.callTool({ name: "km_graph", arguments: { path: "decisions/0007-single-postgres.md" } }),
+    );
+    expect(
+      d1.edges.some(
+        (e: any) =>
+          e.from_page === "decisions/0007-single-postgres.md" &&
+          e.to_page === "decisions/0006-hosting-supabase.md",
+      ),
+    ).toBe(true);
+    expect(d1.nodes.some((n: any) => n.path === "decisions/0006-hosting-supabase.md")).toBe(true);
+    // depth 2 reaches 0005 via 0006
+    const d2 = parse(
+      await c.callTool({
+        name: "km_graph",
+        arguments: { path: "decisions/0007-single-postgres.md", depth: 2 },
+      }),
+    );
+    expect(d2.nodes.some((n: any) => n.path === "decisions/0005-demo-wedge.md")).toBe(true);
+    for (const e of d2.edges) expect(e.commit_sha).toMatch(/^[0-9a-f]{40}$/);
+    await c.close();
+  });
+
   test("km_reindex: no drift after boot ingest", async () => {
     const c = await connect();
     const res = parse(await c.callTool({ name: "km_reindex", arguments: {} }));

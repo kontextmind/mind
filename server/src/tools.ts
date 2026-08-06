@@ -118,6 +118,70 @@ export async function kmList(claims: KmClaims): Promise<{ pages: Array<{ path: s
   });
 }
 
+export interface GraphEdge {
+  from_page: string;
+  to_page: string;
+  kind: string;
+  commit_sha: string;
+}
+
+/** km_graph: wikilink neighborhood traversal (depth 1–2). Traversal only, no analytics. */
+export async function kmGraph(
+  claims: KmClaims,
+  args: { path: string; depth?: number },
+): Promise<Record<string, unknown>> {
+  const depth = Math.min(Math.max(args.depth ?? 1, 1), 2);
+  return withClaims(claims, async (tx) => {
+    const edges: GraphEdge[] = [];
+    const edgeKeys = new Set<string>();
+    const seen = new Set<string>([args.path]);
+    let frontier = [args.path];
+
+    for (let d = 0; d < depth && frontier.length > 0; d++) {
+      const rows = await tx`
+        select from_page, to_page, kind, commit_sha from graph_edges
+        where from_page = any(${frontier}) or to_page = any(${frontier})`;
+      const next = new Set<string>();
+      for (const r of rows) {
+        const key = `${r.from_page}->${r.to_page}:${r.kind}`;
+        if (!edgeKeys.has(key)) {
+          edgeKeys.add(key);
+          edges.push({
+            from_page: r.from_page as string,
+            to_page: r.to_page as string,
+            kind: r.kind as string,
+            commit_sha: r.commit_sha as string,
+          });
+        }
+        for (const p of [r.from_page as string, r.to_page as string]) {
+          if (!seen.has(p)) {
+            seen.add(p);
+            next.add(p);
+          }
+        }
+      }
+      frontier = [...next];
+    }
+
+    const paths = [...seen];
+    const nodes = await tx`
+      select path, title, status from pages
+      where path = any(${paths}) and status <> 'tombstone'
+      order by path`;
+    // Wikilink targets that exist only as edges (no page yet) still surface.
+    const pagePaths = new Set(nodes.map((n) => n.path as string));
+    const dangling = paths.filter((p) => p !== args.path && !pagePaths.has(p));
+
+    return {
+      path: args.path,
+      depth,
+      nodes: nodes.map((n) => ({ path: n.path, title: n.title, status: n.status })),
+      dangling,
+      edges,
+    };
+  });
+}
+
 export interface ChatEvidence extends SearchHit {
   via: "search" | "graph";
 }
