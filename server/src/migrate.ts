@@ -1,11 +1,11 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { db } from "./db";
+import { adminDb } from "./db";
 
 const dir = join(import.meta.dir, "../../migrations");
 
 async function main() {
-  const sql = db();
+  const sql = adminDb();
   await sql`create table if not exists _migrations (
     name text primary key,
     applied_at timestamptz not null default now()

@@ -1,36 +1,100 @@
 #!/usr/bin/env bun
 /**
- * kontext — KontextMind CLI (phase 0 stub)
+ * kontext — phase 1a demo surface (board decision D4).
+ * search/read/status are THIN MCP-HTTP clients: they exercise the exact same
+ * protocol path an MCP client would. A passing wrapper demo with a broken MCP
+ * path is impossible by construction.
  *
- * Phase 4 implements the wizard:
- *   kontext init     hub URL -> OAuth -> org/namespace -> trust mode -> agents
- *                    -> skills install -> per-agent MCP config -> AGENTS.md
- *                    snippet (incl. KM-Session trailer contract) -> smoke test
- *   kontext login / whoami / status / doctor
- *   kontext agent create --name <n> --namespaces <ns,...>
- *   kontext harvest  (headless extraction trigger)
- *   kontext export   (departure is as trustworthy as arrival)
+ * The full wizard (init/login/agent) lands in phase 4.
  */
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-const [, , cmd] = process.argv;
+const url = process.env.KM_URL ?? "http://127.0.0.1:3000/mcp";
+const token = process.env.KM_TOKEN ?? "km-demo-local";
 
-const stubs: Record<string, string> = {
-  init: "wizard lands in phase 4",
-  login: "OAuth flows land in phase 1b/4",
-  whoami: "OAuth flows land in phase 1b/4",
-  status: "status lands with phase 1a",
-  doctor: "doctor lands with phase 1c",
-  agent: "agent identities land in phase 1b",
-  harvest: "headless harvest lands in phase 2",
-  export: "export lands before public release",
-};
-
-if (!cmd || cmd === "--help" || cmd === "-h") {
-  console.log(`kontext — The persistent mind behind every AI agent
-
-Commands (planned): ${Object.keys(stubs).join(", ")}`);
-  process.exit(0);
+async function withClient<T>(fn: (c: Client) => Promise<T>): Promise<T> {
+  const transport = new StreamableHTTPClientTransport(new URL(url), {
+    requestInit: { headers: { Authorization: `Bearer ${token}` } },
+  });
+  const client = new Client({ name: "kontext-cli", version: "0.1.0" });
+  await client.connect(transport);
+  try {
+    return await fn(client);
+  } finally {
+    await client.close();
+  }
 }
 
-console.log(`kontext ${cmd}: stub — ${stubs[cmd] ?? "unknown command"}`);
-process.exit(cmd in stubs ? 0 : 1);
+function toolText(res: { content?: Array<{ type: string; text?: string }> }): string {
+  return (res.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n");
+}
+
+const [, , cmd, ...rest] = process.argv;
+
+async function main() {
+  switch (cmd) {
+    case "search": {
+      const query = rest.join(" ");
+      if (!query) return fail("usage: kontext search <query>");
+      await withClient(async (c) => {
+        const res = await c.callTool({ name: "km_search", arguments: { query } });
+        const parsed = JSON.parse(toolText(res as never));
+        for (const hit of parsed.hits ?? []) {
+          const flags = [
+            hit.status !== "verified" ? hit.status : null,
+            hit.superseded_by ? `SUPERSEDED by ${hit.superseded_by}` : null,
+            hit.index_stale ? "index-stale" : null,
+          ].filter(Boolean).join(", ");
+          console.log(`\n${hit.path}  [${hit.commit_sha.slice(0, 7)}${flags ? ` — ${flags}` : ""}]`);
+          if (hit.heading) console.log(`  § ${hit.heading}`);
+          console.log(`  ${hit.excerpt.replace(/\n+/g, " ").slice(0, 220)}…`);
+        }
+        if (!(parsed.hits ?? []).length) console.log("no hits");
+        console.log(`\n(indexed @ ${parsed.indexed_sha?.slice(0, 7) ?? "?"})`);
+      });
+      return;
+    }
+    case "read": {
+      const path = rest[0];
+      if (!path) return fail("usage: kontext read <path>");
+      await withClient(async (c) => {
+        const res = await c.callTool({ name: "km_read", arguments: { path } });
+        const parsed = JSON.parse(toolText(res as never));
+        if (!parsed.page) return fail(`not found: ${path}`);
+        console.log(`# ${parsed.page.title ?? parsed.page.path}`);
+        console.log(`status: ${parsed.page.status} · commit ${parsed.page.commit_sha.slice(0, 7)} · indexed ${parsed.page.indexed_at}`);
+        console.log(`\n${parsed.page.body}`);
+      });
+      return;
+    }
+    case "status": {
+      await withClient(async (c) => {
+        const res = await c.callTool({ name: "km_status", arguments: {} });
+        console.log(toolText(res as never));
+      });
+      return;
+    }
+    default:
+      console.log(`kontext — KontextMind (phase 1a demo surface)
+
+usage:
+  kontext search <query>   search the mind (provenance + staleness per hit)
+  kontext read <path>      read one page
+  kontext status           indexed SHA vs HEAD, trust mode, session
+
+env:
+  KM_URL    MCP endpoint   (default http://127.0.0.1:3000/mcp)
+  KM_TOKEN  bearer token   (default km-demo-local)`);
+  }
+}
+
+function fail(msg: string): never {
+  console.error(msg);
+  process.exit(1);
+}
+
+main().catch((err) => {
+  console.error(`kontext: ${err?.message ?? err}`);
+  process.exit(1);
+});

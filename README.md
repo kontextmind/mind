@@ -16,6 +16,28 @@ and an OAuth login.
 
 > Status: **phase 0** (foundation). See `docs/` for the contracts and the plan of record.
 
+## Quickstart (demo)
+
+```bash
+bun install --no-save        # root (Windows bun lockfile bug: --no-save)
+cd server && bun install --no-save && cd ..
+bun run seed                 # synthesizes demo/mind with dated git history
+docker compose -f deploy/docker-compose.yml up
+```
+
+Then in another terminal:
+
+```bash
+cd cli && bun install --no-save
+bun run src/index.ts search "what database does KontextMind use"
+# → decisions/0007 (verified) + decisions/0006 flagged SUPERSEDED
+bun run src/index.ts status
+```
+
+Or wire any MCP client to `http://localhost:3000/mcp` with bearer token
+`km-demo-local`. The wow beat: ask about the Supabase decision and watch the
+mind flag its own stale page with the superseding decision.
+
 ## One unit, no lock-in
 
 KontextMind is one self-contained deployable: a Bun/TS server + one Postgres

@@ -9,3 +9,4 @@ build/
 .kontextmind/local/
 coverage/
 *.tsbuildinfo
+demo/mind/

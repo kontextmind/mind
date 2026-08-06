@@ -4,11 +4,15 @@
   "version": "0.0.0",
   "description": "The persistent mind behind every AI agent",
   "license": "Apache-2.0",
+  "devDependencies": {
+    "postgres": "^3.4.5"
+  },
   "scripts": {
     "dev": "bun run --cwd server src/index.ts",
     "test": "bun test",
     "test:isolation": "bun test tests/isolation",
     "db:migrate": "bun run --cwd server src/migrate.ts",
+    "seed": "bun run scripts/seed-mind.ts",
     "install:all": "cd server && bun install && cd ../cli && bun install"
   }
 }

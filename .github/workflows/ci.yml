@@ -25,13 +25,18 @@ jobs:
     env:
       DATABASE_URL: postgres://test:test@localhost:5432/kontextmind_test
       TEST_DATABASE_URL: postgres://test:test@localhost:5432/kontextmind_test
+      KM_APP_PASSWORD: km-demo-local
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      - run: bun install
-      - name: Apply migrations
-        run: bun run db:migrate
-      - name: Tests (incl. isolation harness)
+      - name: Install (root + server + cli)
+        run: |
+          bun install --no-save
+          cd server && bun install --no-save
+          cd ../cli && bun install --no-save
+      - name: Seed demo mind
+        run: bun run seed
+      - name: Tests (unit + isolation harness + MCP end-to-end)
         run: bun test
       # Branch protection MUST mark this job required: the isolation harness
-      # is the cross-tenant deny gate (docs/authz-matrix.md).
+      # and MCP e2e are the cross-tenant deny gate (docs/authz-matrix.md).

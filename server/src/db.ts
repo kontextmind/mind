@@ -1,14 +1,34 @@
 import postgres from "postgres";
 
-let sql: postgres.Sql | null = null;
+/**
+ * Two pools, two trust levels (docs/threat-model.md B2):
+ *  - adminDb: superuser — migrations + indexer writes only, never serves queries
+ *  - requestDb: km_app (non-superuser) — RLS actually applies; claims bound
+ *    per request via SET LOCAL. A superuser request connection would make RLS
+ *    decorative; the isolation harness fails loudly if that ever happens.
+ */
 
-export function db(): postgres.Sql {
+let admin: postgres.Sql | null = null;
+let request: postgres.Sql | null = null;
+
+export function adminDb(): postgres.Sql {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL not set");
-  if (!sql) {
-    sql = postgres(url, { max: 10, onnotice: () => {} });
+  if (!admin) admin = postgres(url, { max: 5, onnotice: () => {} });
+  return admin;
+}
+
+export function requestDb(): postgres.Sql {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL not set");
+  if (!request) {
+    const password = process.env.KM_APP_PASSWORD ?? "km-demo-local";
+    const u = new URL(url);
+    u.username = "km_app";
+    u.password = password;
+    request = postgres(u.toString(), { max: 10, onnotice: () => {} });
   }
-  return sql;
+  return request;
 }
 
 export function hasDb(): boolean {
@@ -17,29 +37,20 @@ export function hasDb(): boolean {
 
 export interface KmClaims {
   sub: string;
-  kind: "human" | "agent" | "service";
+  kind: "human" | "agent";
   org: string;
   namespaces: string[];
   roles: Record<string, "member" | "steward" | "owner">;
 }
 
-/**
- * Run a callback inside a transaction with RLS claims bound for the request.
- * Claims are set via SET LOCAL — they never leak across connections.
- * The service kind is rejected here: the indexer uses a separate role.
- */
+/** Run a callback with RLS claims bound for this request (SET LOCAL). */
 export async function withClaims<T>(
   claims: KmClaims,
   fn: (tx: postgres.TransactionSql) => Promise<T>,
 ): Promise<T> {
-  if (claims.kind === "service") {
-    throw new Error("service claims cannot serve requests");
-  }
-  const client = db();
-  return client.begin(async (tx) => {
-    await tx.unsafe(`select set_config('km.claims', $1, true)`, [
-      JSON.stringify(claims),
-    ]);
+  const result = await requestDb().begin(async (tx) => {
+    await tx.unsafe(`select set_config('km.claims', $1, true)`, [JSON.stringify(claims)]);
     return fn(tx);
   });
+  return result as T;
 }
