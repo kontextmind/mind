@@ -47,18 +47,19 @@ export async function ingestRepo(
 
     const { meta, chunks } = chunkPage(content);
     const pageId = `page_${createHash("sha1").update(`${repoId}:${entry.path}`).digest("hex").slice(0, 26)}`;
+    const checks = meta.supersededBy ? { superseded_by: meta.supersededBy } : {};
 
     await sql.begin(async (tx) => {
       await tx`insert into pages (id, repo_id, namespace_id, path, title, status, commit_sha, sources, checks, indexed_at)
         values (${pageId}, ${repoId}, ${namespaceId}, ${entry.path},
-                ${meta.title ?? entry.path}, ${pageStatus(meta)}, ${head}, '[]', '[]', now())
+                ${meta.title ?? entry.path}, ${pageStatus(meta)}, ${head}, '[]', ${checks}, now())
         on conflict (repo_id, path) do update set
           title = excluded.title, status = excluded.status, commit_sha = excluded.commit_sha,
-          indexed_at = now()`;
+          checks = excluded.checks, indexed_at = now()`;
       await tx`delete from chunks where page_id = ${pageId}`;
       for (const c of chunks) {
-        await tx`insert into chunks (id, page_id, namespace_id, ord, content, commit_sha)
-          values (${`${pageId}_${c.ord}`}, ${pageId}, ${namespaceId}, ${c.ord}, ${c.content}, ${head})`;
+        await tx`insert into chunks (id, page_id, namespace_id, ord, content, heading, commit_sha)
+          values (${`${pageId}_${c.ord}`}, ${pageId}, ${namespaceId}, ${c.ord}, ${c.content}, ${c.heading}, ${head})`;
       }
       await tx`delete from graph_edges where repo_id = ${repoId} and from_page = ${entry.path}`;
       for (const target of wikilinks(content)) {

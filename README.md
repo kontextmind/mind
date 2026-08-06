@@ -29,7 +29,7 @@ Then in another terminal:
 
 ```bash
 cd cli && bun install --no-save
-bun run src/index.ts search "what database does KontextMind use"
+bun run src/index.ts search "why did KontextMind drop Supabase"
 # → decisions/0007 (verified) + decisions/0006 flagged SUPERSEDED
 bun run src/index.ts status
 ```

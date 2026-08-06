@@ -2,7 +2,7 @@
 #   bun run seed          # synthesizes demo/mind with dated git history
 #   docker compose up     # db + server, indexes the mind at boot
 # Then:
-#   cd cli && bun run src/index.ts search "what database does KontextMind use"
+#   cd cli && bun run src/index.ts search "why did KontextMind drop Supabase"
 # or wire any MCP client to http://localhost:3000/mcp (token: km-demo-local)
 
 services:
@@ -33,6 +33,7 @@ services:
     environment:
       DATABASE_URL: postgres://kontextmind:kontextmind-dev-only@db:5432/kontextmind
       KM_MODE: demo
+      KM_HOST: 0.0.0.0
       KM_DEMO_TOKEN: km-demo-local
       KM_APP_PASSWORD: km-demo-local
       KM_MIND_PATH: /mind

@@ -26,19 +26,33 @@ const NS_B1 = "ns_b1bbbbbbbbbbbbbbbbbbbbbbb";
 const USER = "user_aaaaaaaaaaaaaaaaaaaaaaa1";
 
 describeMaybe("isolation harness", () => {
-  let sql: postgres.Sql;
+  let sql: postgres.Sql; // superuser: fixtures only
+  let app: postgres.Sql; // km_app: claims queries — RLS actually applies
 
   const claims = (namespaces: string[], kind = "human", org = ORG_A) =>
     JSON.stringify({ sub: USER, kind, org, namespaces, roles: {} });
 
   const asClaims = async (c: string, fn: (tx: postgres.TransactionSql) => Promise<any>) =>
-    sql.begin(async (tx) => {
+    app.begin(async (tx) => {
       await tx.unsafe(`select set_config('km.claims', $1, true)`, [c]);
       return fn(tx);
     });
 
   beforeAll(async () => {
     sql = postgres(url!, { max: 2, onnotice: () => {} });
+    // Request-path role must exist (fresh CI databases have no initdb scripts).
+    await sql`do $$ begin
+      if not exists (select 1 from pg_roles where rolname = 'km_app') then
+        create role km_app login password 'km-demo-local';
+      end if;
+    end $$`;
+    await sql`grant usage on schema public to km_app`;
+    await sql`grant select, insert, update, delete on all tables in schema public to km_app`;
+    await sql`grant usage on all sequences in schema public to km_app`;
+    const appUrl = new URL(url!);
+    appUrl.username = "km_app";
+    appUrl.password = "km-demo-local";
+    app = postgres(appUrl.toString(), { max: 2, onnotice: () => {} });
     // fixture (idempotent)
     await sql`insert into orgs (id, slug, name) values
       (${ORG_A}, 'org-a', 'Org A'), (${ORG_B}, 'org-b', 'Org B')
@@ -58,6 +72,7 @@ describeMaybe("isolation harness", () => {
   });
 
   afterAll(async () => {
+    await app?.end();
     await sql?.end();
   });
 
@@ -68,10 +83,11 @@ describeMaybe("isolation harness", () => {
     expect(rows.length).toBe(0);
   });
 
-  test("principal sees own namespace pages", async () => {
+  test("principal sees own namespace pages only", async () => {
     const rows = await asClaims(claims([NS_A1]), (tx) => tx`select * from pages`);
-    expect(rows.length).toBe(1);
-    expect(rows[0].namespace_id).toBe(NS_A1);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) expect(r.namespace_id).toBe(NS_A1);
+    expect(rows.some((r) => r.path === "wiki/a1.md")).toBe(true);
   });
 
   test("principal is denied sibling namespace (same org)", async () => {
@@ -89,7 +105,7 @@ describeMaybe("isolation harness", () => {
   });
 
   test("no claims = no access", async () => {
-    const rows = await sql.begin(async (tx) => tx`select * from pages`);
+    const rows = await app.begin(async (tx) => tx`select * from pages`);
     expect(rows.length).toBe(0);
   });
 

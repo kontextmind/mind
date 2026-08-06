@@ -165,11 +165,12 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
       }),
     );
     for (const h of res.hits) expect(h.path).not.toBe("wiki/secret-b.md");
-    // Direct read is denied.
+    // Direct read is denied (server returns not_found for invisible paths).
     const read = parse(
       await c.callTool({ name: "km_read", arguments: { path: "wiki/secret-b.md" } }),
     );
-    expect(read.page).toBeNull();
+    expect(read.page ?? null).toBeNull();
+    expect(read.error ?? null).toBe("not_found");
     // List contains no tenant B paths.
     const list = parse(await c.callTool({ name: "km_list", arguments: {} }));
     for (const p of list.pages) expect(p.path).not.toContain("secret-b");

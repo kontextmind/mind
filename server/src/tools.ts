@@ -24,14 +24,24 @@ export async function kmSearch(
   return withClaims(claims, async (tx) => {
     const repo = await tx`select head_sha from repos limit 1`;
     const indexedSha = (repo[0]?.head_sha as string | null) ?? null;
+    const lexemes = await tx`
+      select array_agg(lexeme) as arr
+      from unnest(tsvector_to_array(to_tsvector('english', ${args.query}))) as lexeme`;
+    const arr = (lexemes[0]?.arr as string[] | null) ?? null;
+    if (!arr || arr.length === 0) return { hits: [] as SearchHit[], indexed_sha: indexedSha };
+    const orQuery = arr.join(" | ");
     const rows = await tx`
+      with q as (select to_tsquery('english', ${orQuery}) as tsq)
       select c.content, c.heading, p.path, p.status, p.commit_sha, p.indexed_at,
-             p.sources,
-             coalesce(p.checks->>'superseded_by', null) as superseded_by,
-             ts_rank_cd(to_tsvector('english', c.content), websearch_to_tsquery('english', ${args.query})) as score
+             p.sources, p.checks,
+             ts_rank_cd(to_tsvector('english', c.content), q.tsq)
+               + case when to_tsvector('english', coalesce(p.title, '')) @@ q.tsq
+                      then 0.5 else 0 end as score
       from chunks c
       join pages p on p.id = c.page_id
-      where to_tsvector('english', c.content) @@ websearch_to_tsquery('english', ${args.query})
+      cross join q
+      where (to_tsvector('english', c.content) @@ q.tsq
+         or to_tsvector('english', coalesce(p.title, '')) @@ q.tsq)
         and p.status <> 'tombstone'
       order by score desc
       limit ${limit}`;
