@@ -14,9 +14,10 @@ and an OAuth login.
   (`KM-Session` commit trailers), detects loop patterns, drift, and knowledge gaps,
   and recommends improvements with proof on a dashboard.
 
-> Status: **phase 1d** — read/write paths, review queue, secret gates,
-> evidence-spine webhook join, WI insights, work context (checkpoints +
-> claimable handoffs). See `docs/` for the contracts and the plan of record.
+> Status: **phase 1g** — read/write paths, review queue, secret gates,
+> evidence-spine webhook join, WI insights, work context, event stream,
+> hosted-mode OAuth 2.1 (PKCE + DCR + audience binding; GitHub upstream is
+> the remaining seam). See `docs/` for the contracts and the plan of record.
 
 ## Quickstart (demo)
 
@@ -70,7 +71,7 @@ npx kontext init    # connect a project: wizard wires MCP config + skills + AGEN
 - [Agent Evidence Trailers v1](docs/session-spine.md) — the `KM-Session` commit-trailer spec.
 - [GitHub webhook ingestion](docs/webhooks.md) — how trailers join to `git_evidence` (webhooks only, never self-report).
 - [Trust modes](docs/trust-modes.md) — `relaxed | standard | strict` per instance/namespace.
-- [Threat model](docs/threat-model.md) · [Authz matrix](docs/authz-matrix.md) · [Secret gates](docs/secret-gates.md)
+- [Threat model](docs/threat-model.md) · [Authz matrix](docs/authz-matrix.md) · [Secret gates](docs/secret-gates.md) · [Hosted auth](docs/hosted-auth.md)
 
 ## Principles
 
