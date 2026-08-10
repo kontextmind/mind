@@ -50,7 +50,7 @@ Postgres 15+ — hosted or in your own VPC. Hard tenant isolation = run another 
 
 ```bash
 docker compose up   # server + pgvector Postgres, seeded demo mind (phase 1a)
-npx kontext init    # connect a project: wizard wires MCP config + skills + AGENTS.md
+npx kontext init    # connect a project: MCP config + commit-msg trailer hook + AGENTS.md contract
 ```
 
 ## Repository layout

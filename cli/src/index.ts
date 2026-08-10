@@ -1,14 +1,15 @@
 #!/usr/bin/env bun
 /**
- * kontext — phase 1a demo surface (board decision D4).
+ * kontext — CLI surface.
  * search/read/status are THIN MCP-HTTP clients: they exercise the exact same
  * protocol path an MCP client would. A passing wrapper demo with a broken MCP
  * path is impossible by construction.
- *
- * The full wizard (init/login/agent) lands in phase 4.
+ * `init` connects a project: MCP config + commit-msg trailer hook + AGENTS.md
+ * contract (docs/session-spine.md).
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { initProject, writeSessionFile } from "./init";
 
 const url = process.env.KM_URL ?? "http://127.0.0.1:3000/mcp";
 const token = process.env.KM_TOKEN ?? "km-demo-local";
@@ -71,8 +72,39 @@ async function main() {
     case "status": {
       await withClient(async (c) => {
         const res = await c.callTool({ name: "km_status", arguments: {} });
-        console.log(toolText(res as never));
+        const text = toolText(res as never);
+        console.log(text);
+        // MCP handshake writes the active session file the commit-msg hook
+        // reads (docs/session-spine.md) — only inside a git work tree.
+        try {
+          const sessionId = (JSON.parse(text) as { session_id?: string }).session_id;
+          if (sessionId && writeSessionFile(process.cwd(), sessionId)) {
+            console.log(`\n(session written to .kontextmind/session — the commit-msg hook will attach it)`);
+          }
+        } catch {
+          /* status output that is not JSON still prints above */
+        }
       });
+      return;
+    }
+    case "init": {
+      // usage: kontext init [--url U] [--token T] [--dir D]
+      const target = argAfter("--dir") ?? process.cwd();
+      try {
+        const report = initProject({
+          projectDir: target,
+          url: argAfter("--url") ?? url,
+          token: argAfter("--token") ?? token,
+        });
+        console.log(`kontext init — ${target}`);
+        console.log(`  .mcp.json         ${report.mcp}`);
+        console.log(`  commit-msg hook   ${report.hook}${report.hook === "skipped-existing" ? " (foreign hook kept; agents emit the trailer directly)" : ""}`);
+        console.log(`  AGENTS.md         ${report.agents}`);
+        console.log(`  manifest          ${report.manifest}`);
+        console.log(`  .gitignore        ${report.gitignore}`);
+      } catch (err) {
+        return fail(`kontext init: ${(err as Error).message}`);
+      }
       return;
     }
     case "append": {
@@ -123,12 +155,15 @@ async function main() {
       return;
     }
     default:
-      console.log(`kontext — KontextMind (phase 1b demo surface)
+      console.log(`kontext — KontextMind
 
 usage:
+  kontext init [--url U] [--token T] [--dir D]  connect this project (MCP config +
+                                                commit-msg trailer hook + AGENTS.md)
   kontext search <query>                    search the mind (provenance + staleness per hit)
   kontext read <path>                       read one page
   kontext status                            indexed SHA vs HEAD, trust mode, session
+                                            (writes .kontextmind/session for the hook)
   kontext append --title T --content C      file a learning draft (secret-gated)
   kontext review [list|resolve ...]         work the review queue
 
