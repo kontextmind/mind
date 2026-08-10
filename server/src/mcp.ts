@@ -14,6 +14,7 @@ import { kmAppend, kmReview } from "./write-tools";
 import { kmChat, kmGraph } from "./tools";
 import { kmInvite, kmProjectAdd, kmProjects, kmReindex } from "./admin-tools";
 import { kmInsights } from "./insights";
+import { kmHandoffLoad, kmHandoffSave, kmWorkCurrent, kmWorkUpdate } from "./work-tools";
 
 export interface McpContext {
   cfg: Config;
@@ -311,6 +312,90 @@ function buildServer(ctx: McpContext): McpServer {
     async (args) => {
       try {
         const res = await kmInsights(ctx.claims, args);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ error: String((err as Error)?.message ?? err) }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "km_work_current",
+    {
+      description:
+        "Current work context: latest checkpoint per task, open handoffs (unclaimed or stale-claimed), and tracker read-through status. Optional namespace filter (RLS already scopes to your memberships).",
+      inputSchema: { namespace: z.string().optional() },
+    },
+    async (args) => {
+      const res = await kmWorkCurrent(ctx.claims, args);
+      return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+    },
+  );
+
+  server.registerTool(
+    "km_work_update",
+    {
+      description:
+        "File a work checkpoint: a note on a task (task_ref = Linear/GitHub id or free text), optional status update. TTL ~90 days, size-capped, secret-scanned (gate 2 rejects, never redacts).",
+      inputSchema: {
+        task_ref: z.string().optional(),
+        note: z.string(),
+        status: z.string().optional(),
+      },
+    },
+    async (args) => {
+      const sessionId = await issueSession(ctx.claims);
+      try {
+        const res = await kmWorkUpdate(ctx.claims, args, { sessionId });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ error: String((err as Error)?.message ?? err) }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "km_handoff_save",
+    {
+      description:
+        "Save a handoff so another agent/session can resume this task: bounded state JSON + next_steps (<=20 items). Secret-scanned. idempotency_key makes retries return the same handoff.",
+      inputSchema: {
+        task_ref: z.string().optional(),
+        state: z.record(z.any()),
+        next_steps: z.array(z.string()).optional(),
+        idempotency_key: z.string().optional(),
+      },
+    },
+    async (args) => {
+      const sessionId = await issueSession(ctx.claims);
+      try {
+        const res = await kmHandoffSave(ctx.claims, args, { sessionId });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ error: String((err as Error)?.message ?? err) }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "km_handoff_load",
+    {
+      description:
+        "Load a handoff. claim=true acquires the claim lease (default 4h); a live lease held by another principal is respected, stale leases are takeable. Departure is as trustworthy as arrival.",
+      inputSchema: { id: z.string(), claim: z.boolean().optional() },
+    },
+    async (args) => {
+      try {
+        const res = await kmHandoffLoad(ctx.claims, args);
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (err) {
         return {

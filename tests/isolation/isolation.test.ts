@@ -87,6 +87,12 @@ describeMaybe("isolation harness", () => {
       ('ins_a1aaaaaaaaaaaaaaaaaaaaa1', ${NS_A1}, 'loop', 'org A loop insight', '{"subject":"fixture"}'),
       ('ins_a2aaaaaaaaaaaaaaaaaaaaa1', ${NS_A2}, 'gap', 'org A sibling insight', '{"subject":"fixture"}')
       on conflict (id) do nothing`;
+    await sql`insert into checkpoints (id, namespace_id, task_ref, author_id, note) values
+      ('cp_a1aaaaaaaaaaaaaaaaaaaaa1', ${NS_A1}, 'LIN-1', ${USER}, 'org A checkpoint')
+      on conflict (id) do nothing`;
+    await sql`insert into handoffs (id, namespace_id, task_ref, author_id, state) values
+      ('ho_a1aaaaaaaaaaaaaaaaaaaaa1', ${NS_A1}, 'LIN-1', ${USER}, '{"step":1}')
+      on conflict (id) do nothing`;
   });
 
   afterAll(async () => {
@@ -258,6 +264,54 @@ describeMaybe("isolation harness", () => {
   test("insights: service kind is denied", async () => {
     const rows = await asClaims(claims([NS_A1], "service"), (tx) => tx`select * from insights`);
     expect(rows.length).toBe(0);
+  });
+
+  test("checkpoints: namespace-scoped reads (own visible, sibling + cross-org + anon denied)", async () => {
+    const own = await asClaims(claims([NS_A1]), (tx) => tx`select * from checkpoints`);
+    expect(own.length).toBe(1);
+    expect(own[0].namespace_id).toBe(NS_A1);
+    const sibling = await asClaims(claims([NS_A2]), (tx) =>
+      tx`select * from checkpoints where namespace_id = ${NS_A1}`,
+    );
+    expect(sibling.length).toBe(0);
+    const crossOrg = await asClaims(claims([NS_B1], "human", ORG_B), (tx) =>
+      tx`select * from checkpoints`,
+    );
+    expect(crossOrg.length).toBe(0);
+    const anon = await app.begin(async (tx) => tx`select * from checkpoints`);
+    expect(anon.length).toBe(0);
+  });
+
+  test("handoffs: namespace-scoped reads (own visible, sibling + cross-org + anon denied)", async () => {
+    const own = await asClaims(claims([NS_A1]), (tx) => tx`select * from handoffs`);
+    expect(own.length).toBe(1);
+    expect(own[0].namespace_id).toBe(NS_A1);
+    const sibling = await asClaims(claims([NS_A2]), (tx) =>
+      tx`select * from handoffs where namespace_id = ${NS_A1}`,
+    );
+    expect(sibling.length).toBe(0);
+    const crossOrg = await asClaims(claims([NS_B1], "human", ORG_B), (tx) =>
+      tx`select * from handoffs`,
+    );
+    expect(crossOrg.length).toBe(0);
+    const anon = await app.begin(async (tx) => tx`select * from handoffs`);
+    expect(anon.length).toBe(0);
+  });
+
+  test("handoffs: cross-namespace write is denied", async () => {
+    await expect(
+      asClaims(claims([NS_A1]), (tx) =>
+        tx`insert into handoffs (id, namespace_id, author_id, state)
+           values ('ho_deny_test', ${NS_A2}, ${USER}, '{"x":1}')`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  test("work context: service kind is denied (checkpoints + handoffs)", async () => {
+    const cps = await asClaims(claims([NS_A1], "service"), (tx) => tx`select * from checkpoints`);
+    const hos = await asClaims(claims([NS_A1], "service"), (tx) => tx`select * from handoffs`);
+    expect(cps.length).toBe(0);
+    expect(hos.length).toBe(0);
   });
 
   // Phase 1a: repeat every case above through the HTTP/MCP path for each
