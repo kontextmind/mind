@@ -14,6 +14,7 @@ import { kmAppend, kmReview } from "./write-tools";
 import { kmChat, kmGraph } from "./tools";
 import { kmInvite, kmProjectAdd, kmProjects, kmReindex } from "./admin-tools";
 import { kmInsights } from "./insights";
+import { argsHash, recordEvent, runEventDetectors } from "./events";
 import { kmHandoffLoad, kmHandoffSave, kmWorkCurrent, kmWorkUpdate } from "./work-tools";
 
 export interface McpContext {
@@ -32,10 +33,17 @@ export async function issueSession(claims: KmClaims): Promise<string> {
   try {
     // Claims-bound write (RLS org policy permits it); the session row carries
     // the claims' org, which is the tenant boundary the webhook join checks.
+    // repo binding: first repo registered to the caller's primary namespace —
+    // it lets event-driven detectors attribute insights to a namespace.
+    const primaryNs = claims.namespaces[0] ?? null;
     await withClaims(claims, async (tx) => {
-      await tx`insert into km_sessions (id, org_id, principal, agent_kind)
+      const repo = primaryNs
+        ? await tx`select id from repos where default_namespace_id = ${primaryNs} limit 1`
+        : [];
+      const repoId = (repo[0]?.id as string | undefined) ?? null;
+      await tx`insert into km_sessions (id, org_id, principal, agent_kind, repo_id)
         values (${id}, ${claims.org}, ${claims.sub},
-                ${claims.kind === "agent" ? "other" : null})
+                ${claims.kind === "agent" ? "other" : null}, ${repoId})
         on conflict (id) do nothing`;
     });
   } catch {
@@ -71,7 +79,13 @@ function buildServer(ctx: McpContext): McpServer {
       inputSchema: { query: z.string(), limit: z.number().int().min(1).max(25).optional() },
     },
     async (args) => {
+      const sessionId = await issueSession(ctx.claims);
       const res = await tools.kmSearch(ctx.claims, args);
+      // Low-cardinality contract: args-hash + hit count only, never the query.
+      await recordEvent(ctx.claims, sessionId, "search", {
+        args_hash: argsHash(args),
+        hits: res.hits.length,
+      });
       return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
     },
   );
@@ -83,7 +97,12 @@ function buildServer(ctx: McpContext): McpServer {
       inputSchema: { path: z.string() },
     },
     async (args) => {
+      const sessionId = await issueSession(ctx.claims);
       const res = await tools.kmRead(ctx.claims, args);
+      await recordEvent(ctx.claims, sessionId, "read", {
+        args_hash: argsHash(args),
+        found: res.page !== null,
+      });
       return {
         content: [
           {
@@ -125,6 +144,9 @@ function buildServer(ctx: McpContext): McpServer {
         headSha: ctx.headSha(),
         skill: args.skill,
       });
+      // Session heartbeat = detection point. Insights are pull-only: the
+      // detectors run here, never on a timer or a push.
+      await runEventDetectors(ctx.claims.org);
       return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
     },
   );
@@ -145,6 +167,11 @@ function buildServer(ctx: McpContext): McpServer {
       const sessionId = await issueSession(ctx.claims);
       try {
         const res = await kmAppend(ctx.claims, args, { cfg: ctx.cfg, sessionId });
+        await recordEvent(ctx.claims, sessionId, "append", {
+          args_hash: argsHash(args),
+          classification: args.classification ?? "project",
+          status: String(res.status ?? "drafted"),
+        });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (err) {
         return {
@@ -172,6 +199,10 @@ function buildServer(ctx: McpContext): McpServer {
       const sessionId = await issueSession(ctx.claims);
       try {
         const res = await kmReview(ctx.claims, args, { cfg: ctx.cfg, sessionId });
+        await recordEvent(ctx.claims, sessionId, "review", {
+          action: args.action,
+          verdict: args.verdict ?? "",
+        });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (err) {
         return {
@@ -210,7 +241,13 @@ function buildServer(ctx: McpContext): McpServer {
       },
     },
     async (args) => {
+      const sessionId = await issueSession(ctx.claims);
       const res = await kmChat(ctx.claims, args);
+      await recordEvent(ctx.claims, sessionId, "chat", {
+        args_hash: argsHash(args),
+        mode: res.mode,
+        hits: res.evidence.length,
+      });
       return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
     },
   );
@@ -350,6 +387,7 @@ function buildServer(ctx: McpContext): McpServer {
       const sessionId = await issueSession(ctx.claims);
       try {
         const res = await kmWorkUpdate(ctx.claims, args, { sessionId });
+        await recordEvent(ctx.claims, sessionId, "checkpoint", { args_hash: argsHash(args) });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (err) {
         return {
@@ -376,6 +414,7 @@ function buildServer(ctx: McpContext): McpServer {
       const sessionId = await issueSession(ctx.claims);
       try {
         const res = await kmHandoffSave(ctx.claims, args, { sessionId });
+        await recordEvent(ctx.claims, sessionId, "handoff_save", { args_hash: argsHash(args) });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (err) {
         return {
@@ -396,6 +435,12 @@ function buildServer(ctx: McpContext): McpServer {
     async (args) => {
       try {
         const res = await kmHandoffLoad(ctx.claims, args);
+        if (args.claim) {
+          const sessionId = await issueSession(ctx.claims);
+          await recordEvent(ctx.claims, sessionId, "handoff_claim", {
+            acquired: Boolean((res.claim as Record<string, unknown> | null)?.acquired),
+          });
+        }
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (err) {
         return {

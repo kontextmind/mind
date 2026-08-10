@@ -42,6 +42,20 @@ On GitHub webhook events (push, PR, check_suite, merge):
 - Coverage metric: % of merged agent-authored commits carrying a resolvable trailer,
   per agent identity. Low coverage = instrumentation gap, surfaced on the dashboard.
 
+## Activity stream (km_event)
+
+Sessions also emit `km_event` rows — the activity half of the spine
+(trailers are the git half). **Binding contract: payloads are
+low-cardinality — tool + args-hash + derived counters only; raw args
+(queries, notes, state) are never stored.** An event row must be safe to
+show to anyone in the org.
+
+Events are recorded claims-bound and best-effort (observation must never
+break the observed path). Detection over events is pull-only: detectors run
+at the `km_status` heartbeat, never on timers. Current detector: the
+empty-search streak → `gap` insight (≥3 consecutive zero-hit searches since
+the last success), attributed via session → repo → namespace.
+
 ## Emitter compatibility
 
 Any tool that creates commits can emit this trailer. KontextMind aims to ship emitters

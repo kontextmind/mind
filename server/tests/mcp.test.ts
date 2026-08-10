@@ -705,4 +705,45 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
     expect(res.error).toBe("not_found");
     await c.close();
   });
+
+  test("km_event: low-cardinality rows emitted — raw args never stored", async () => {
+    const c = await connect();
+    const RAW = "zebrafish-quorum-777";
+    parse(await c.callTool({ name: "km_search", arguments: { query: RAW } }));
+    parse(await c.callTool({ name: "km_read", arguments: { path: "wiki/does-not-exist.md" } }));
+    parse(await c.callTool({
+      name: "km_work_update",
+      arguments: { task_ref: "EVT-1", note: "event test checkpoint" },
+    }));
+    const kinds = await admin`select kind from km_event`;
+    const kindSet = new Set(kinds.map((r) => r.kind as string));
+    expect(kindSet.has("search")).toBe(true);
+    expect(kindSet.has("read")).toBe(true);
+    expect(kindSet.has("checkpoint")).toBe(true);
+    // Privacy contract (docs/session-spine.md): no payload may carry the raw
+    // query text — tool + args-hash + counters only.
+    const leaked = await admin`select count(*)::int as n from km_event
+      where payload::text like ${`%${RAW}%`}`;
+    expect(leaked[0].n).toBe(0);
+    await c.close();
+  });
+
+  test("km_event: empty-search streak files a gap insight at the km_status heartbeat", async () => {
+    const c = await connect();
+    // Three consecutive zero-hit searches (earlier successful searches in
+    // this suite precede the streak — a past hit resets nothing forward).
+    for (const q of ["flurbognost-9", "quuxmeister-42", "zantastic-77"]) {
+      parse(await c.callTool({ name: "km_search", arguments: { query: q } }));
+    }
+    parse(await c.callTool({ name: "km_status", arguments: {} })); // heartbeat → detectors
+    const gaps = parse(await c.callTool({ name: "km_insights", arguments: { kind: "gap" } }));
+    const churn = gaps.insights.filter((i: any) => i.title.includes("empty searches"));
+    expect(churn.length).toBe(1);
+    expect(churn[0].evidence.searches).toBeGreaterThanOrEqual(3);
+    // Pull-only dedupe: another heartbeat files no duplicate.
+    parse(await c.callTool({ name: "km_status", arguments: {} }));
+    const again = parse(await c.callTool({ name: "km_insights", arguments: { kind: "gap" } }));
+    expect(again.insights.filter((i: any) => i.title.includes("empty searches")).length).toBe(1);
+    await c.close();
+  });
 });

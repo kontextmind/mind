@@ -51,7 +51,7 @@ function newInsightId(): string {
  * Returns [] when the repo is not addressable (nothing to surface — an
  * insight with no namespace could not be served under RLS anyway).
  */
-async function namespacesForRepo(repoId: string): Promise<string[]> {
+export async function namespacesForRepo(repoId: string): Promise<string[]> {
   const sql = adminDb();
   const repo = await sql`
     select default_namespace_id from repos where id = ${repoId}`;
@@ -73,7 +73,8 @@ async function pendingExists(namespaceId: string, kind: InsightKind, subject: st
   return rows.length > 0;
 }
 
-async function fileInsight(
+/** Deduped file: at most one PENDING insight per (namespace, kind, subject). */
+export async function fileInsightIfNew(
   namespaceId: string,
   kind: InsightKind,
   title: string,
@@ -124,7 +125,7 @@ async function detectLoop(repoId: string): Promise<string[]> {
     for (const r of rows) {
       const sessionId = r.session_id as string;
       const commits = Number(r.commits);
-      const id = await fileInsight(
+      const id = await fileInsightIfNew(
         ns,
         "loop",
         `Session ${sessionId.slice(0, 15)}… churned ${commits} unmerged commits in ${name} — intervene or split the task`,
@@ -156,7 +157,7 @@ async function detectCoverageGap(repoId: string): Promise<string[]> {
   const pct = Math.round((1 - ratio) * 100);
   const out: string[] = [];
   for (const ns of await namespacesForRepo(repoId)) {
-    const id = await fileInsight(
+    const id = await fileInsightIfNew(
       ns,
       "gap",
       `Trailer coverage ${pct}% in ${name} — fix the KM-Session emitters`,
