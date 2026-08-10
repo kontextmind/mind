@@ -8,6 +8,12 @@ export interface Config {
   mindPath: string | null;
   appPassword: string;
   githubWebhookSecret: string | null;
+  /** Canonical resource URL for RFC 8707 audience binding (hosted mode). */
+  publicUrl: string | null;
+  /** Hosted-mode owner-auth seam: comma-separated allowlist of emails. */
+  bootstrapEmails: string[];
+  /** Requests/minute per IP for the auth endpoints (B1 rate limiting). */
+  authRateLimit: number;
 }
 
 export function loadConfig(): Config {
@@ -23,7 +29,18 @@ export function loadConfig(): Config {
     mindPath: process.env.KM_MIND_PATH ?? null,
     appPassword: process.env.KM_APP_PASSWORD ?? "km-demo-local",
     githubWebhookSecret: process.env.KM_GITHUB_WEBHOOK_SECRET ?? null,
+    publicUrl: process.env.KM_PUBLIC_URL ?? null,
+    bootstrapEmails: (process.env.KM_HOSTED_BOOTSTRAP_EMAILS ?? "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+    authRateLimit: Number(process.env.KM_AUTH_RATE_LIMIT ?? 120),
   };
+}
+
+/** Canonical resource URL: the audience every hosted token is bound to. */
+export function canonicalResource(cfg: Config): string {
+  return cfg.publicUrl ?? `http://localhost:${cfg.port}`;
 }
 
 /** Demo-mode constants: single tenant fixture, localhost only. */

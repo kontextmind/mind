@@ -7,6 +7,13 @@ import { adminDb, hasDb } from "./db";
 import { authenticate } from "./auth";
 import { handleMcp } from "./mcp";
 import { handleGitHubWebhook } from "./webhook";
+import {
+  authorizationServerMetadata,
+  authorize,
+  protectedResourceMetadata,
+  registerClient,
+  token,
+} from "./auth-server";
 import { ingestRepo } from "./indexer/ingest";
 import { headSha, isRepo } from "./indexer/git";
 
@@ -66,9 +73,32 @@ export function createFetch(cfg: Config): (req: Request) => Response | Promise<R
       return handleGitHubWebhook(req, cfg);
     }
 
-    if (url.pathname.startsWith("/.well-known/")) {
+    if (url.pathname === "/.well-known/oauth-protected-resource") {
+      if (cfg.mode !== "hosted") {
+        return Response.json(
+          { error: "not_implemented", detail: "OAuth discovery is hosted-mode only" },
+          { status: 501 },
+        );
+      }
+      return protectedResourceMetadata(cfg);
+    }
+
+    if (cfg.mode === "hosted") {
+      if (url.pathname === "/.well-known/oauth-authorization-server") {
+        return authorizationServerMetadata(cfg);
+      }
+      if (url.pathname === "/register" && req.method === "POST") {
+        return registerClient(req, cfg);
+      }
+      if (url.pathname === "/authorize" && req.method === "GET") {
+        return authorize(req, cfg);
+      }
+      if (url.pathname === "/token" && req.method === "POST") {
+        return token(req, cfg);
+      }
+    } else if (url.pathname.startsWith("/.well-known/")) {
       return Response.json(
-        { error: "not_implemented", detail: "OAuth discovery lands in phase 1b" },
+        { error: "not_implemented", detail: "OAuth discovery is hosted-mode only" },
         { status: 501 },
       );
     }
@@ -80,7 +110,7 @@ export function createFetch(cfg: Config): (req: Request) => Response | Promise<R
           { status: 503 },
         );
       }
-      const authn = authenticate(cfg, req);
+      const authn = await authenticate(cfg, req);
       if (!authn.ok) {
         return Response.json(authn.body, { status: authn.status, headers: authn.headers });
       }
