@@ -93,6 +93,9 @@ describeMaybe("isolation harness", () => {
     await sql`insert into handoffs (id, namespace_id, task_ref, author_id, state) values
       ('ho_a1aaaaaaaaaaaaaaaaaaaaa1', ${NS_A1}, 'LIN-1', ${USER}, '{"step":1}')
       on conflict (id) do nothing`;
+    await sql`insert into km_event (session_id, org_id, kind, payload) values
+      ('km_ses_' || repeat('e', 26), ${ORG_A}, 'search', '{"hits": 0}')
+      on conflict do nothing`;
   });
 
   afterAll(async () => {
@@ -312,6 +315,38 @@ describeMaybe("isolation harness", () => {
     const hos = await asClaims(claims([NS_A1], "service"), (tx) => tx`select * from handoffs`);
     expect(cps.length).toBe(0);
     expect(hos.length).toBe(0);
+  });
+
+  test("km_event: org-scoped reads (own visible, cross-org + anon denied)", async () => {
+    const own = await asClaims(claims([NS_A1]), (tx) => tx`select * from km_event`);
+    expect(own.length).toBeGreaterThan(0);
+    for (const r of own) expect(r.org_id).toBe(ORG_A);
+    const crossOrg = await asClaims(claims([NS_B1], "human", ORG_B), (tx) =>
+      tx`select * from km_event`,
+    );
+    expect(crossOrg.length).toBe(0);
+    const anon = await app.begin(async (tx) => tx`select * from km_event`);
+    expect(anon.length).toBe(0);
+  });
+
+  test("km_event: cross-org write is denied", async () => {
+    await expect(
+      asClaims(claims([NS_B1], "human", ORG_B), (tx) =>
+        tx`insert into km_event (session_id, org_id, kind)
+           values ('km_ses_' || repeat('e', 26), ${ORG_A}, 'search')`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  test("km_event: service kind is denied (reads and writes)", async () => {
+    const rows = await asClaims(claims([NS_A1], "service"), (tx) => tx`select * from km_event`);
+    expect(rows.length).toBe(0);
+    await expect(
+      asClaims(claims([NS_A1], "service"), (tx) =>
+        tx`insert into km_event (session_id, org_id, kind)
+           values ('km_ses_' || repeat('e', 26), ${ORG_A}, 'search')`,
+      ),
+    ).rejects.toThrow();
   });
 
   // Phase 1a: repeat every case above through the HTTP/MCP path for each
