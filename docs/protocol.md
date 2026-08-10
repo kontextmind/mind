@@ -40,7 +40,7 @@ session pinning; access is claims/RLS-bound by design.
 
 | Tool | Args | Returns | Notes |
 |---|---|---|---|
-| `km_work_current` | `namespace?` | tracker read-through (Linear/GitHub, cached) + open handoffs + latest checkpoints | |
+| `km_work_current` | `namespace?` | tracker read-through (Linear/GitHub, cached) + open handoffs + latest checkpoints | tracker integration lands with hosted mode; until then the response says `trackers.connected: false` — never faked |
 | `km_work_update` | `task_ref`, `note`, `status?` | checkpoint ref | TTL ~90d, size-capped, secret-scanned |
 | `km_handoff_save` | `task_ref`, `state`, `next_steps[]` | handoff id | bounded state JSON, idempotency key |
 | `km_handoff_load` | `id`, `claim?` | handoff + claim lease | lease expiry releases stale claims |

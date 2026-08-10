@@ -582,4 +582,127 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
     expect(ghost.error).toBe("not_found");
     await c.close();
   });
+
+  test("km_work_update: checkpoint with TTL + status appears in km_work_current", async () => {
+    const c = await connect();
+    const res = parse(
+      await c.callTool({
+        name: "km_work_update",
+        arguments: { task_ref: "LIN-42", note: "migrated indexer to blob cache", status: "in_progress" },
+      }),
+    );
+    expect(res.checkpoint.id).toMatch(/^cp_/);
+    expect(res.checkpoint.status).toBe("in_progress");
+    // TTL ~90d: expires_at is in the future, well beyond now.
+    expect(new Date(res.checkpoint.expires_at).getTime()).toBeGreaterThan(Date.now() + 80 * 864e5);
+    const cur = parse(await c.callTool({ name: "km_work_current", arguments: {} }));
+    expect(cur.trackers.connected).toBe(false); // honest: no integration yet
+    const cp = cur.checkpoints.find((x: any) => x.task_ref === "LIN-42");
+    expect(cp?.note).toBe("migrated indexer to blob cache");
+    expect(cp?.status).toBe("in_progress");
+    await c.close();
+  });
+
+  test("km_work_update: gate 2 rejects secrets — never stored", async () => {
+    const c = await connect();
+    const res = await c.callTool({
+      name: "km_work_update",
+      arguments: { task_ref: "LIN-43", note: "use token ghp_aB3dEfGhIjKlMnOpQrStUvWxYz0123456789 for ci" },
+    });
+    expect(res.isError).toBe(true);
+    expect(parse(res).error).toContain("secret_gate");
+    const rows = await admin`select id from checkpoints where task_ref = 'LIN-43'`;
+    expect(rows.length).toBe(0);
+    await c.close();
+  });
+
+  test("km_work_update: size-capped note is rejected", async () => {
+    const c = await connect();
+    const res = await c.callTool({
+      name: "km_work_update",
+      arguments: { note: "x".repeat(8001) },
+    });
+    expect(res.isError).toBe(true);
+    expect(parse(res).error).toContain("8000");
+    await c.close();
+  });
+
+  test("km_handoff_save/load: state + next_steps round-trip; claim lease acquired", async () => {
+    const c = await connect();
+    const saved = parse(
+      await c.callTool({
+        name: "km_handoff_save",
+        arguments: {
+          task_ref: "LIN-44",
+          state: { branch: "feat/x", done: ["ingest"], blocked_on: "review" },
+          next_steps: ["run isolation harness", "open PR"],
+        },
+      }),
+    );
+    expect(saved.id).toMatch(/^ho_/);
+    expect(saved.existing).toBe(false);
+
+    const loaded = parse(
+      await c.callTool({ name: "km_handoff_load", arguments: { id: saved.id, claim: true } }),
+    );
+    expect(loaded.handoff.state.blocked_on).toBe("review");
+    expect(loaded.handoff.next_steps).toEqual(["run isolation harness", "open PR"]);
+    expect(loaded.claim.acquired).toBe(true);
+    expect(new Date(loaded.claim.lease_expires).getTime()).toBeGreaterThan(Date.now() + 3 * 36e5);
+
+    // Claimed handoff no longer counts as open for others; the caller still
+    // sees it in their work context.
+    const cur = parse(await c.callTool({ name: "km_work_current", arguments: {} }));
+    expect(cur.open_handoffs.some((h: any) => h.id === saved.id)).toBe(true);
+    await c.close();
+  });
+
+  test("km_handoff_load: live foreign lease is respected; stale lease is takeable", async () => {
+    const c = await connect();
+    const saved = parse(
+      await c.callTool({
+        name: "km_handoff_save",
+        arguments: { task_ref: "LIN-45", state: { step: 1 }, next_steps: ["continue"] },
+      }),
+    );
+    // Simulate another principal holding a live lease.
+    await admin`update handoffs set claimed_by = 'agent-other', claimed_at = now(),
+      lease_expires = now() + interval '1 hour' where id = ${saved.id}`;
+    const blocked = parse(
+      await c.callTool({ name: "km_handoff_load", arguments: { id: saved.id, claim: true } }),
+    );
+    expect(blocked.claim.acquired).toBe(false);
+    expect(blocked.claim.claimed_by).toBe("agent-other");
+    // Lease expires → takeover succeeds (stale claims release).
+    await admin`update handoffs set lease_expires = now() - interval '1 minute' where id = ${saved.id}`;
+    const taken = parse(
+      await c.callTool({ name: "km_handoff_load", arguments: { id: saved.id, claim: true } }),
+    );
+    expect(taken.claim.acquired).toBe(true);
+    const rows = await admin`select claimed_by from handoffs where id = ${saved.id}`;
+    expect(rows[0].claimed_by).not.toBe("agent-other");
+    await c.close();
+  });
+
+  test("km_handoff_save: idempotency key returns the same handoff", async () => {
+    const c = await connect();
+    const args = {
+      task_ref: "LIN-46",
+      state: { v: 1 },
+      next_steps: ["go"],
+      idempotency_key: "idem-46",
+    };
+    const first = parse(await c.callTool({ name: "km_handoff_save", arguments: args }));
+    const second = parse(await c.callTool({ name: "km_handoff_save", arguments: args }));
+    expect(second.id).toBe(first.id);
+    expect(second.existing).toBe(true);
+    await c.close();
+  });
+
+  test("km_handoff_load: unknown id is not_found", async () => {
+    const c = await connect();
+    const res = parse(await c.callTool({ name: "km_handoff_load", arguments: { id: "ho_missing" } }));
+    expect(res.error).toBe("not_found");
+    await c.close();
+  });
 });

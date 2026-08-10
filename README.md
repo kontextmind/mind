@@ -14,8 +14,9 @@ and an OAuth login.
   (`KM-Session` commit trailers), detects loop patterns, drift, and knowledge gaps,
   and recommends improvements with proof on a dashboard.
 
-> Status: **phase 1b** (read + write paths, review queue, secret gates,
-> evidence-spine webhook join). See `docs/` for the contracts and the plan of record.
+> Status: **phase 1d** — read/write paths, review queue, secret gates,
+> evidence-spine webhook join, WI insights, work context (checkpoints +
+> claimable handoffs). See `docs/` for the contracts and the plan of record.
 
 ## Quickstart (demo)
 
