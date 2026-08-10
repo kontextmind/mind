@@ -136,11 +136,12 @@ export async function kmProjectAdd(
   const displayName = args.name;
 
   const row = await withClaims(claims, async (tx) => {
-    const rows = await tx`insert into repos (id, org_id, github_full, display_name, local_path)
-      values (${repoId}, ${claims.org}, ${githubFull}, ${displayName}, ${localPath})
+    const rows = await tx`insert into repos (id, org_id, github_full, display_name, local_path, default_namespace_id)
+      values (${repoId}, ${claims.org}, ${githubFull}, ${displayName}, ${localPath}, ${ns})
       on conflict (id) do update set
         display_name = excluded.display_name,
-        local_path = coalesce(excluded.local_path, repos.local_path)
+        local_path = coalesce(excluded.local_path, repos.local_path),
+        default_namespace_id = coalesce(repos.default_namespace_id, excluded.default_namespace_id)
       returning id, github_full, display_name, local_path, head_sha, indexed_at`;
     return rows[0] as RepoRow;
   });

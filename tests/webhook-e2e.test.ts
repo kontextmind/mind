@@ -22,8 +22,14 @@ const describeMaybe = url ? describe : describe.skip;
 
 const ORG_A = "org_aaaaaaaaaaaaaaaaaaaaaaaa";
 const ORG_B = "org_bbbbbbbbbbbbbbbbbbbbbbbb";
+const NS_A1 = "ns_a1aaaaaaaaaaaaaaaaaaaaaa";
 const REPO_A = "repo_aaaaaaaaaaaaaaaaaaaaaaa1";
 const REPO_B = "repo_bbbbbbbbbbbbbbbbbbbbbbb1";
+// Dedicated repos for detector tests so their evidence counts can never be
+// perturbed by the join tests above (detectors count across the whole repo).
+const REPO_LOOPS = "repo_caaaaaaaaaaaaaaaaaaaaa1";
+const REPO_GHOSTS = "repo_daaaaaaaaaaaaaaaaaaaaa1";
+const REPO_ORPHAN = "repo_eaaaaaaaaaaaaaaaaaaaaa1";
 const SES_A1 = `km_ses_${"a".repeat(26)}`;
 const SES_A2 = `km_ses_${"d".repeat(26)}`;
 const SES_B1 = `km_ses_${"b".repeat(26)}`;
@@ -96,8 +102,16 @@ describeMaybe("webhook ingestion (evidence spine join)", () => {
     await sql`insert into orgs (id, slug, name) values
       (${ORG_A}, 'org-a', 'Org A'), (${ORG_B}, 'org-b', 'Org B')
       on conflict (id) do nothing`;
+    await sql`insert into namespaces (id, org_id, slug, kind) values
+      (${NS_A1}, ${ORG_A}, 'project-a1', 'project')
+      on conflict (id) do nothing`;
+    await sql`insert into repos (id, org_id, github_full, default_namespace_id) values
+      (${REPO_A}, ${ORG_A}, 'acme/mind', ${NS_A1}),
+      (${REPO_LOOPS}, ${ORG_A}, 'acme/loops', ${NS_A1}),
+      (${REPO_GHOSTS}, ${ORG_A}, 'acme/ghosts', ${NS_A1}),
+      (${REPO_ORPHAN}, ${ORG_A}, 'acme/orphan', null)
+      on conflict (id) do nothing`;
     await sql`insert into repos (id, org_id, github_full) values
-      (${REPO_A}, ${ORG_A}, 'acme/mind'),
       (${REPO_B}, ${ORG_B}, 'beta/mind')
       on conflict (id) do nothing`;
     await sql`insert into km_sessions (id, org_id, principal) values
@@ -301,5 +315,74 @@ describeMaybe("webhook ingestion (evidence spine join)", () => {
     const other = await post(fetchHandler, "issues", { action: "opened" });
     expect(other.status).toBe(200);
     expect(await other.json()).toMatchObject({ ignored: "unsupported_event" });
+  });
+
+  test("loop detector: ≥6 unmerged commits by one session files ONE loop insight", async () => {
+    const commits = Array.from({ length: 6 }, (_, i) => ({
+      id: sha(String(i)),
+      message: `churn ${i}\n\nKM-Session: ${SES_A1}\n`,
+    }));
+    const res = await post(fetchHandler, "push", pushPayload("acme/loops", commits));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ evidence_rows: 6, insights_filed: 1 });
+    const rows = await sql`select * from insights where kind = 'loop'`;
+    expect(rows.length).toBe(1);
+    expect(rows[0].namespace_id).toBe(NS_A1);
+    expect(rows[0].verdict).toBe("pending");
+    expect(rows[0].title).toContain("acme/loops");
+    expect(rows[0].evidence.subject).toBe(`repo:${REPO_LOOPS}:session:${SES_A1}`);
+  });
+
+  test("loop detector: redelivery and further churn file no duplicate", async () => {
+    const commits = Array.from({ length: 6 }, (_, i) => ({
+      id: sha(String(i)),
+      message: `churn ${i}\n\nKM-Session: ${SES_A1}\n`,
+    }));
+    const redelivery = await post(fetchHandler, "push", pushPayload("acme/loops", commits));
+    expect(await redelivery.json()).toMatchObject({ insights_filed: 0 });
+    const more = await post(fetchHandler, "push", pushPayload("acme/loops", [
+      { id: sha("6"), message: `churn more\n\nKM-Session: ${SES_A1}\n` },
+    ]));
+    expect(await more.json()).toMatchObject({ insights_filed: 0 });
+    const rows = await sql`select * from insights where kind = 'loop'`;
+    expect(rows.length).toBe(1);
+  });
+
+  test("coverage detector: ≥40% unresolved trailers files ONE gap insight", async () => {
+    // 3 ghost trailers + 2 resolved = 5 observed, 60% unresolved ≥ 40%.
+    // (sha chars must be hex — non-hex shas are dropped by the webhook guard.)
+    await post(fetchHandler, "push", pushPayload("acme/ghosts", [
+      { id: sha("c"), message: `x\n\nKM-Session: ${GHOST}\n` },
+      { id: sha("d"), message: `x\n\nKM-Session: ${GHOST}\n` },
+      { id: sha("e"), message: `x\n\nKM-Session: ${GHOST}\n` },
+    ]));
+    const res = await post(fetchHandler, "push", pushPayload("acme/ghosts", [
+      { id: sha("9"), message: `x\n\nKM-Session: ${SES_A2}\n` },
+      { id: sha("0"), message: `x\n\nKM-Session: ${SES_A2}\n` },
+    ]));
+    expect(await res.json()).toMatchObject({ insights_filed: 1 });
+    const rows = await sql`select * from insights where kind = 'gap'`;
+    expect(rows.length).toBe(1);
+    expect(rows[0].namespace_id).toBe(NS_A1);
+    expect(rows[0].evidence.coverage).toBe(40);
+    expect(rows[0].title).toContain("acme/ghosts");
+    // Redelivery stays deduped.
+    const again = await post(fetchHandler, "push", pushPayload("acme/ghosts", [
+      { id: sha("9"), message: `x\n\nKM-Session: ${SES_A2}\n` },
+    ]));
+    expect(await again.json()).toMatchObject({ insights_filed: 0 });
+  });
+
+  test("detectors skip repos with no addressable namespace (evidence still joins)", async () => {
+    const res = await post(fetchHandler, "push", pushPayload("acme/orphan", [
+      ...Array.from({ length: 6 }, (_, i) => ({
+        id: `f${i}`.padEnd(40, "f"),
+        message: `churn ${i}\n\nKM-Session: ${SES_A1}\n`,
+      })),
+    ]));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ evidence_rows: 6, insights_filed: 0 });
+    const rows = await sql`select * from insights where evidence ->> 'repo' = ${REPO_ORPHAN}`;
+    expect(rows.length).toBe(0);
   });
 });

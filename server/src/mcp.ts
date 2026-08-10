@@ -13,6 +13,7 @@ import * as tools from "./tools";
 import { kmAppend, kmReview } from "./write-tools";
 import { kmChat, kmGraph } from "./tools";
 import { kmInvite, kmProjectAdd, kmProjects, kmReindex } from "./admin-tools";
+import { kmInsights } from "./insights";
 
 export interface McpContext {
   cfg: Config;
@@ -283,6 +284,33 @@ function buildServer(ctx: McpContext): McpServer {
     async (args) => {
       try {
         const res = await kmInvite(ctx.claims, args);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ error: String((err as Error)?.message ?? err) }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "km_insights",
+    {
+      description:
+        "Workflow-intelligence insights derived only from git/CI evidence (never self-report). action=list (default) returns ≤3 pending task-scoped insights, optionally filtered by namespace/kind. action=dismiss requires id + verdict (accepted|dismissed|snoozed); dismissed/snoozed require reason. Pull-only: insights never push.",
+      inputSchema: {
+        action: z.enum(["list", "dismiss"]).optional(),
+        namespace: z.string().optional(),
+        kind: z.enum(["routing", "loop", "drift", "contradiction", "gap", "process"]).optional(),
+        id: z.string().optional(),
+        verdict: z.enum(["accepted", "dismissed", "snoozed"]).optional(),
+        reason: z.string().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        const res = await kmInsights(ctx.claims, args);
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (err) {
         return {

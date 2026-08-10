@@ -17,7 +17,7 @@ import postgres from "postgres";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { resolveDbUrl, createDisposableDb, type DisposableDb } from "../../tests/support/db";
-import { loadConfig, DEMO_ORG } from "../src/config";
+import { loadConfig, DEMO_ORG, DEMO_NAMESPACE } from "../src/config";
 import { bootDemo, createFetch } from "../src/app";
 
 const dbUrl = resolveDbUrl("MCP e2e");
@@ -81,6 +81,14 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
     };
     process.env.KM_APP_PASSWORD = "km-demo-local";
     await bootDemo(cfg);
+
+    // Insight fixtures AFTER bootDemo: DEMO_NAMESPACE only exists once the
+    // demo org is seeded. Detectors file these in production; km_insights
+    // under test only reads/dismisses.
+    await admin`insert into insights (id, namespace_id, kind, title, evidence, confidence) values
+      ('ins_aaaaaaaaaaaaaaaaaaaaaaa1', ${DEMO_NAMESPACE}, 'loop', 'fixture loop insight', '{"subject":"fixture:1"}', 0.7),
+      ('ins_aaaaaaaaaaaaaaaaaaaaaaa2', ${DEMO_NAMESPACE}, 'gap', 'fixture gap insight', '{"subject":"fixture:2"}', 0.6)
+      on conflict (id) do nothing`;
     server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: createFetch(cfg) });
     baseUrl = `http://127.0.0.1:${server.port}/mcp`;
   });
@@ -513,5 +521,65 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
 
   test("demo org fixture matches claims (sanity)", () => {
     expect(DEMO_ORG).toBe("org_aaaaaaaaaaaaaaaaaaaaaaaa");
+  });
+
+  test("km_insights: lists pending insights with evidence, kind filter works", async () => {
+    const c = await connect();
+    const res = parse(await c.callTool({ name: "km_insights", arguments: {} }));
+    expect(res.count).toBe(2);
+    for (const i of res.insights) {
+      expect(i.verdict).toBe("pending");
+      expect(i.namespace_id).toBe(DEMO_NAMESPACE);
+      expect(i.evidence.subject).toMatch(/^fixture:/);
+    }
+    const gaps = parse(await c.callTool({ name: "km_insights", arguments: { kind: "gap" } }));
+    expect(gaps.count).toBe(1);
+    expect(gaps.insights[0].kind).toBe("gap");
+    await c.close();
+  });
+
+  test("km_insights: dismiss requires verdict; dismissed/snoozed require reason", async () => {
+    const c = await connect();
+    const noVerdict = await c.callTool({
+      name: "km_insights",
+      arguments: { action: "dismiss", id: "ins_aaaaaaaaaaaaaaaaaaaaaaa1" },
+    });
+    expect(noVerdict.isError).toBe(true);
+    expect(parse(noVerdict).error).toContain("verdict");
+    const noReason = await c.callTool({
+      name: "km_insights",
+      arguments: { action: "dismiss", id: "ins_aaaaaaaaaaaaaaaaaaaaaaa1", verdict: "dismissed" },
+    });
+    expect(noReason.isError).toBe(true);
+    expect(parse(noReason).error).toContain("reason");
+    await c.close();
+  });
+
+  test("km_insights: dismiss records verdict and removes from list; unknown id is not_found", async () => {
+    const c = await connect();
+    const res = parse(
+      await c.callTool({
+        name: "km_insights",
+        arguments: {
+          action: "dismiss",
+          id: "ins_aaaaaaaaaaaaaaaaaaaaaaa1",
+          verdict: "accepted",
+        },
+      }),
+    );
+    expect(res.dismissed.verdict).toBe("accepted");
+    const rows = await admin`select verdict from insights where id = 'ins_aaaaaaaaaaaaaaaaaaaaaaa1'`;
+    expect(rows[0].verdict).toBe("accepted");
+    const after = parse(await c.callTool({ name: "km_insights", arguments: {} }));
+    expect(after.count).toBe(1);
+    expect(after.insights[0].id).toBe("ins_aaaaaaaaaaaaaaaaaaaaaaa2");
+    const ghost = parse(
+      await c.callTool({
+        name: "km_insights",
+        arguments: { action: "dismiss", id: "ins_doesnotexist", verdict: "snoozed", reason: "later" },
+      }),
+    );
+    expect(ghost.error).toBe("not_found");
+    await c.close();
   });
 });
