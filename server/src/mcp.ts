@@ -7,8 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import type { Config } from "./config";
-import { adminDb, type KmClaims } from "./db";
-import { DEMO_ORG } from "./config";
+import { withClaims, type KmClaims } from "./db";
 import { newSessionId } from "./session";
 import * as tools from "./tools";
 import { kmAppend, kmReview } from "./write-tools";
@@ -23,20 +22,40 @@ export interface McpContext {
 
 const sessionsByPrincipal = new Map<string, string>();
 
-export async function issueSession(principal: string): Promise<string> {
-  let id = sessionsByPrincipal.get(principal);
+export async function issueSession(claims: KmClaims): Promise<string> {
+  let id = sessionsByPrincipal.get(claims.sub);
   if (id) return id;
   id = newSessionId();
-  sessionsByPrincipal.set(principal, id);
+  sessionsByPrincipal.set(claims.sub, id);
   try {
-    const sql = adminDb();
-    await sql`insert into km_sessions (id, org_id, principal, agent_kind)
-      values (${id}, ${DEMO_ORG}, ${principal}, 'other')
-      on conflict (id) do nothing`;
+    // Claims-bound write (RLS org policy permits it); the session row carries
+    // the claims' org, which is the tenant boundary the webhook join checks.
+    await withClaims(claims, async (tx) => {
+      await tx`insert into km_sessions (id, org_id, principal, agent_kind)
+        values (${id}, ${claims.org}, ${claims.sub},
+                ${claims.kind === "agent" ? "other" : null})
+        on conflict (id) do nothing`;
+    });
   } catch {
-    // session persistence is best-effort in 1a; the ID still echoes
+    // session persistence is best-effort; the ID still echoes via km_status
   }
   return id;
+}
+
+/** Beacon handshake (docs/protocol.md km_status): skill context for a session. */
+export async function recordBeacon(
+  claims: KmClaims,
+  sessionId: string,
+  skill: string,
+): Promise<void> {
+  try {
+    await withClaims(claims, async (tx) => {
+      await tx`insert into skill_use (session_id, org_id, skill, provenance, weight)
+        values (${sessionId}, ${claims.org}, ${skill}, 'beacon', 1)`;
+    });
+  } catch {
+    // best-effort: km_status still echoes the beacon when persistence fails
+  }
 }
 
 function buildServer(ctx: McpContext): McpServer {
@@ -96,7 +115,8 @@ function buildServer(ctx: McpContext): McpServer {
       inputSchema: { skill: z.string().optional() },
     },
     async (args) => {
-      const sessionId = await issueSession(ctx.claims.sub);
+      const sessionId = await issueSession(ctx.claims);
+      if (args.skill) await recordBeacon(ctx.claims, sessionId, args.skill);
       const res = await tools.kmStatus(ctx.claims, {
         sessionId,
         trustMode: ctx.cfg.trustMode,
@@ -120,7 +140,7 @@ function buildServer(ctx: McpContext): McpServer {
       },
     },
     async (args) => {
-      const sessionId = await issueSession(ctx.claims.sub);
+      const sessionId = await issueSession(ctx.claims);
       try {
         const res = await kmAppend(ctx.claims, args, { cfg: ctx.cfg, sessionId });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
@@ -147,7 +167,7 @@ function buildServer(ctx: McpContext): McpServer {
       },
     },
     async (args) => {
-      const sessionId = await issueSession(ctx.claims.sub);
+      const sessionId = await issueSession(ctx.claims);
       try {
         const res = await kmReview(ctx.claims, args, { cfg: ctx.cfg, sessionId });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
