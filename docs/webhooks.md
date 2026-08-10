@@ -59,3 +59,21 @@ webhook caller has no user claims. `git_evidence` and `km_unresolved_trailers`
 carry no permissive write policies for `km_app`, and their RLS read policies
 are org-scoped through the repo's org — asserted by deny-tests in
 `tests/isolation/`.
+
+## Insight detection
+
+After every push join, detectors derive Workflow Intelligence insights from
+the evidence tables (never from self-report). Each answers "what decision does
+this change?"; every fired insight carries its evidence payload.
+
+| Kind | Signal | Thresholds | Decision |
+|---|---|---|---|
+| `loop` | one session churning unmerged commits | ≥6 commits with `merged_at is null` in one repo | intervene / split the task |
+| `gap` | trailer coverage low | ≥5 observed trailers and ≥40% unresolved | fix the KM-Session emitters |
+
+Dedupe: at most one *pending* insight per `(namespace, kind, subject)`, so
+redelivered webhooks never file duplicates. Insights attach to the repo's
+registered namespace (`repos.default_namespace_id`, set at project
+registration); repos without a binding fall back to the namespaces of their
+indexed pages, and otherwise produce nothing (an insight must be servable
+under tenant RLS to exist).

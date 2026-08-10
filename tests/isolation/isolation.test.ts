@@ -83,6 +83,10 @@ describeMaybe("isolation harness", () => {
     await sql`insert into km_unresolved_trailers (repo_id, sha, trailer) values
       ('repo_aaaaaaaaaaaaaaaaaaaaaaa1', repeat('e', 40), 'km_ses_' || repeat('9', 26))
       on conflict do nothing`;
+    await sql`insert into insights (id, namespace_id, kind, title, evidence) values
+      ('ins_a1aaaaaaaaaaaaaaaaaaaaa1', ${NS_A1}, 'loop', 'org A loop insight', '{"subject":"fixture"}'),
+      ('ins_a2aaaaaaaaaaaaaaaaaaaaa1', ${NS_A2}, 'gap', 'org A sibling insight', '{"subject":"fixture"}')
+      on conflict (id) do nothing`;
   });
 
   afterAll(async () => {
@@ -224,6 +228,36 @@ describeMaybe("isolation harness", () => {
            ('repo_aaaaaaaaaaaaaaaaaaaaaaa1', repeat('d', 40), 'km_ses_' || repeat('8', 26))`,
       ),
     ).rejects.toThrow();
+  });
+
+  test("insights: namespace-scoped reads (own visible, sibling + cross-org + anon denied)", async () => {
+    const own = await asClaims(claims([NS_A1]), (tx) => tx`select * from insights`);
+    expect(own.length).toBe(1);
+    expect(own[0].namespace_id).toBe(NS_A1);
+    const sibling = await asClaims(claims([NS_A1]), (tx) =>
+      tx`select * from insights where namespace_id = ${NS_A2}`,
+    );
+    expect(sibling.length).toBe(0);
+    const crossOrg = await asClaims(claims([NS_B1], "human", ORG_B), (tx) =>
+      tx`select * from insights`,
+    );
+    expect(crossOrg.length).toBe(0);
+    const anon = await app.begin(async (tx) => tx`select * from insights`);
+    expect(anon.length).toBe(0);
+  });
+
+  test("insights: cross-namespace write is denied", async () => {
+    await expect(
+      asClaims(claims([NS_A1]), (tx) =>
+        tx`insert into insights (id, namespace_id, kind, title)
+           values ('ins_deny_test', ${NS_A2}, 'loop', 'should be denied')`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  test("insights: service kind is denied", async () => {
+    const rows = await asClaims(claims([NS_A1], "service"), (tx) => tx`select * from insights`);
+    expect(rows.length).toBe(0);
   });
 
   // Phase 1a: repeat every case above through the HTTP/MCP path for each

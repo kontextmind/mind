@@ -19,9 +19,9 @@ export async function bootDemo(cfg: Config): Promise<void> {
   await sql`insert into namespaces (id, org_id, slug, kind) values
     (${DEMO_NAMESPACE}, ${DEMO_ORG}, 'demo', 'project')
     on conflict (id) do nothing`;
-  await sql`insert into repos (id, org_id, github_full) values
-    (${DEMO_REPO}, ${DEMO_ORG}, 'local/demo-mind')
-    on conflict (id) do nothing`;
+  await sql`insert into repos (id, org_id, github_full, default_namespace_id) values
+    (${DEMO_REPO}, ${DEMO_ORG}, 'local/demo-mind', ${DEMO_NAMESPACE})
+    on conflict (id) do update set default_namespace_id = excluded.default_namespace_id`;
 
   if (!isRepo(cfg.mindPath)) {
     console.warn(`KM_MIND_PATH=${cfg.mindPath} is not a git repo — skipping ingest`);

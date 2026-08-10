@@ -19,6 +19,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { adminDb, hasDb } from "./db";
 import type { Config } from "./config";
 import { parseKmTrailers } from "./session";
+import { runDetectors } from "./insights";
 
 /** GitHub event payloads are small; this is a wall against abuse, not tuning. */
 export const MAX_BODY_BYTES = 5 * 1024 * 1024;
@@ -116,6 +117,7 @@ async function handlePush(payload: Payload): Promise<Record<string, unknown>> {
     evidence_rows: evidence,
     unresolved,
     without_trailer: withoutTrailer,
+    insights_filed: (await runDetectors(repo.id)).length,
   };
 }
 

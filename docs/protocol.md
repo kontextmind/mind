@@ -49,7 +49,7 @@ session pinning; access is claims/RLS-bound by design.
 
 | Tool | Args | Returns | Notes |
 |---|---|---|---|
-| `km_insights` | `namespace?`, `kind?` | ≤3 task-scoped insights | pull-only; verdicts required on dismiss |
+| `km_insights` | `action?: list\|dismiss`, `namespace?`, `kind?`, `id?`, `verdict?`, `reason?` | ≤3 task-scoped insights | pull-only; dismiss requires verdict (accepted\|dismissed\|snoozed), dismissed/snoozed require reason; insights derive from git/CI evidence only, never self-report |
 
 ## Conventions
 
