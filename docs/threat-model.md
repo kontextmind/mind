@@ -17,7 +17,7 @@ Status: **v1** — review at every phase boundary.
 
 | Principal | Identity | Scope | Revocation |
 |---|---|---|---|
-| Human developer | GitHub OAuth → Better Auth user | memberships → namespaces | remove membership |
+| Human developer | GitHub OAuth → owner seam (docs/decisions/0001) | memberships → namespaces | remove membership |
 | Headless box | device-authorization grant | as the human | revoke session |
 | Agent/CI | OAuth client_credentials (Agent Auth registry) | explicit namespace list | delete client (instant) |
 | Indexer (internal) | service role, process-local | read git, write index; **never serves queries** | n/a |

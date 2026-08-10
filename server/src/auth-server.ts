@@ -16,6 +16,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { adminDb } from "./db";
 import { canonicalResource, type Config } from "./config";
+import { resolveOwner } from "./owner-auth";
 import type { KmClaims } from "./db";
 
 export const ACCESS_TTL_S = 3600;
@@ -128,18 +129,8 @@ export async function registerClient(req: Request, cfg: Config): Promise<Respons
 
 // ---------------------------------------------------------------------------
 // Authorization endpoint (code + PKCE + audience binding)
+// Owner authentication lives behind the seam in owner-auth.ts (decision 0001).
 // ---------------------------------------------------------------------------
-
-/**
- * OWNER-AUTHENTICATION SEAM. v1 hosted: operator-controlled email allowlist
- * (KM_HOSTED_BOOTSTRAP_EMAILS). Production: GitHub OAuth session via Better
- * Auth. Returns the authenticated email, or null.
- */
-export function authenticateOwner(cfg: Config, req: Request): string | null {
-  const email = new URL(req.url).searchParams.get("email")?.trim().toLowerCase() ?? "";
-  if (!email || !cfg.bootstrapEmails.includes(email)) return null;
-  return email;
-}
 
 /** First login bootstraps the tenant: user + org + owner membership + namespace. */
 async function bootstrapUser(email: string): Promise<string> {
@@ -197,8 +188,13 @@ export async function authorize(req: Request, cfg: Config): Promise<Response> {
   const resource = q.get("resource") ?? "";
   if (resource !== issuer) return fail("invalid_target"); // RFC 8707 audience
 
-  const email = authenticateOwner(cfg, req);
-  if (!email) {
+  const owner = await resolveOwner(cfg, req);
+  if (!owner) {
+    if (cfg.ownerAuth === "github") {
+      // Send the owner to GitHub; the state table carries us back here.
+      const ret = `${url.pathname}?${url.searchParams.toString()}`;
+      return Response.redirect(`/auth/github/start?return=${encodeURIComponent(ret)}`, 302);
+    }
     // Direct 403 (not a redirect): no authenticated owner, nothing to send
     // back to the client — and the email itself must not leak via redirect.
     return Response.json(
@@ -206,7 +202,7 @@ export async function authorize(req: Request, cfg: Config): Promise<Response> {
       { status: 403 },
     );
   }
-  const userId = await bootstrapUser(email);
+  const userId = await bootstrapUser(owner.email);
 
   const code = `oc_${randomBytes(24).toString("hex")}`;
   await sql`insert into oauth_codes (code, client_id, user_id, redirect_uri, challenge, resource, expires_at)
