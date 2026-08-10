@@ -7,6 +7,7 @@ export interface Config {
   trustMode: "relaxed" | "standard" | "strict" | "local-demo";
   mindPath: string | null;
   appPassword: string;
+  githubWebhookSecret: string | null;
 }
 
 export function loadConfig(): Config {
@@ -21,6 +22,7 @@ export function loadConfig(): Config {
     trustMode: mode === "demo" ? "local-demo" : "standard",
     mindPath: process.env.KM_MIND_PATH ?? null,
     appPassword: process.env.KM_APP_PASSWORD ?? "km-demo-local",
+    githubWebhookSecret: process.env.KM_GITHUB_WEBHOOK_SECRET ?? null,
   };
 }
 

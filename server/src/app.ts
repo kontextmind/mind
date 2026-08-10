@@ -6,6 +6,7 @@ import { DEMO_NAMESPACE, DEMO_ORG, DEMO_REPO, type Config } from "./config";
 import { adminDb, hasDb } from "./db";
 import { authenticate } from "./auth";
 import { handleMcp } from "./mcp";
+import { handleGitHubWebhook } from "./webhook";
 import { ingestRepo } from "./indexer/ingest";
 import { headSha, isRepo } from "./indexer/git";
 
@@ -59,6 +60,10 @@ export function createFetch(cfg: Config): (req: Request) => Response | Promise<R
         mode: cfg.mode,
         database: hasDb() ? "configured" : "absent (degraded: healthz only)",
       });
+    }
+
+    if (url.pathname === "/webhooks/github") {
+      return handleGitHubWebhook(req, cfg);
     }
 
     if (url.pathname.startsWith("/.well-known/")) {

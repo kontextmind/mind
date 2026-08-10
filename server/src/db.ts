@@ -35,6 +35,24 @@ export function hasDb(): boolean {
   return Boolean(process.env.DATABASE_URL);
 }
 
+/**
+ * Close and forget both pools. `bun test` runs every file in one process, so
+ * the lazy singletons above would otherwise stay bound to the first
+ * DATABASE_URL they saw — a db-backed suite that swaps in a disposable
+ * database would poison the next suite's connections. Call this in teardown
+ * before dropping the database.
+ */
+export async function endDbPools(): Promise<void> {
+  try {
+    await admin?.end({ timeout: 5 });
+  } catch {}
+  try {
+    await request?.end({ timeout: 5 });
+  } catch {}
+  admin = null;
+  request = null;
+}
+
 export interface KmClaims {
   sub: string;
   kind: "human" | "agent";

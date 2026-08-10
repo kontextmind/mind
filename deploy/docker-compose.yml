@@ -37,6 +37,9 @@ services:
       KM_DEMO_TOKEN: km-demo-local
       KM_APP_PASSWORD: km-demo-local
       KM_MIND_PATH: /mind
+      # Evidence-spine webhook join (docs/webhooks.md). Unset = the endpoint
+      # fails closed with 503.
+      KM_GITHUB_WEBHOOK_SECRET: ${KM_GITHUB_WEBHOOK_SECRET:-}
       PORT: "3000"
     ports:
       - "3000:3000"

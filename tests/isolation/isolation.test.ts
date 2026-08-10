@@ -72,6 +72,17 @@ describeMaybe("isolation harness", () => {
     await sql`insert into invites (id, org_id, email, role, token, invited_by) values
       ('inv_aaaaaaaaaaaaaaaaaaaaaaa1', ${ORG_A}, 'a@example.com', 'member', 'tok_a_fixture', ${USER})
       on conflict (id) do nothing`;
+    // Evidence spine fixtures (webhook join reads: git_evidence,
+    // km_unresolved_trailers are org-scoped via their repos).
+    await sql`insert into km_sessions (id, org_id, principal) values
+      ('km_ses_' || repeat('e', 26), ${ORG_A}, 'agent-e')
+      on conflict (id) do nothing`;
+    await sql`insert into git_evidence (session_id, repo_id, sha) values
+      ('km_ses_' || repeat('e', 26), 'repo_aaaaaaaaaaaaaaaaaaaaaaa1', repeat('e', 40))
+      on conflict (repo_id, sha, session_id) do nothing`;
+    await sql`insert into km_unresolved_trailers (repo_id, sha, trailer) values
+      ('repo_aaaaaaaaaaaaaaaaaaaaaaa1', repeat('e', 40), 'km_ses_' || repeat('9', 26))
+      on conflict do nothing`;
   });
 
   afterAll(async () => {
@@ -167,6 +178,50 @@ describeMaybe("isolation harness", () => {
       asClaims(claims([NS_A1]), (tx) =>
         tx`insert into repos (id, org_id, github_full)
            values ('repo_deny_test', ${ORG_B}, 'test/mind-deny')`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  test("git_evidence: org-scoped reads (own org visible, cross-org denied)", async () => {
+    const own = await asClaims(claims([NS_A1]), (tx) => tx`select * from git_evidence`);
+    expect(own.length).toBeGreaterThan(0);
+    for (const r of own) expect(r.repo_id).toBe("repo_aaaaaaaaaaaaaaaaaaaaaaa1");
+    const crossOrg = await asClaims(claims([NS_B1], "human", ORG_B), (tx) =>
+      tx`select * from git_evidence`,
+    );
+    expect(crossOrg.length).toBe(0);
+    const anon = await app.begin(async (tx) => tx`select * from git_evidence`);
+    expect(anon.length).toBe(0);
+  });
+
+  test("git_evidence: claims-bound writes are denied (webhook-only population)", async () => {
+    await expect(
+      asClaims(claims([NS_A1]), (tx) =>
+        tx`insert into git_evidence (session_id, repo_id, sha) values
+           ('km_ses_' || repeat('e', 26), 'repo_aaaaaaaaaaaaaaaaaaaaaaa1', repeat('d', 40))`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  test("km_unresolved_trailers: org-scoped reads (own org visible, cross-org denied)", async () => {
+    const own = await asClaims(claims([NS_A1]), (tx) =>
+      tx`select * from km_unresolved_trailers`,
+    );
+    expect(own.length).toBeGreaterThan(0);
+    for (const r of own) expect(r.repo_id).toBe("repo_aaaaaaaaaaaaaaaaaaaaaaa1");
+    const crossOrg = await asClaims(claims([NS_B1], "human", ORG_B), (tx) =>
+      tx`select * from km_unresolved_trailers`,
+    );
+    expect(crossOrg.length).toBe(0);
+    const anon = await app.begin(async (tx) => tx`select * from km_unresolved_trailers`);
+    expect(anon.length).toBe(0);
+  });
+
+  test("km_unresolved_trailers: claims-bound writes are denied (webhook-only)", async () => {
+    await expect(
+      asClaims(claims([NS_A1]), (tx) =>
+        tx`insert into km_unresolved_trailers (repo_id, sha, trailer) values
+           ('repo_aaaaaaaaaaaaaaaaaaaaaaa1', repeat('d', 40), 'km_ses_' || repeat('8', 26))`,
       ),
     ).rejects.toThrow();
   });
