@@ -14,7 +14,7 @@ Transport: MCP Streamable HTTP. Auth: OAuth 2.1 per the MCP authorization spec
 
 | Tool | Args | Returns | Notes |
 |---|---|---|---|
-| `km_search` | `query`, `namespace?`, `limit?`, `status?` | hits: `{path, excerpt, score, status, author, commit_sha, indexed_at}` | hybrid FTS (+pgvector later); staleness per hit |
+| `km_search` | `query`, `namespace?`, `limit?`, `status?` | hits: `{path, excerpt, score, status, author, commit_sha, indexed_at}` | hybrid FTS + pgvector cosine when `KM_EMBEDDINGS_*` configured; FTS-only otherwise (said plainly); embedding failures degrade to FTS; staleness per hit |
 | `km_read` | `path`, `namespace?`, `ref?` | page content + frontmatter + provenance | |
 | `km_list` | `namespace?`, `prefix?` | page tree | |
 | `km_graph` | `path`, `depth?` (1–2) | wikilink neighborhood | traversal only, no analytics |

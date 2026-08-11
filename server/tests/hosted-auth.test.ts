@@ -42,6 +42,7 @@ describeMaybe("hosted auth (OAuth 2.1)", () => {
     github: null,
     githubApi: "https://api.github.com",
     githubApiToken: null,
+    embeddings: null,
     authRateLimit: 10000,
     ...over,
   });

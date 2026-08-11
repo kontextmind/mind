@@ -15,6 +15,7 @@ import { kmChat, kmGraph } from "./tools";
 import { kmInvite, kmProjectAdd, kmProjects, kmReindex } from "./admin-tools";
 import { kmInsights } from "./insights";
 import { argsHash, recordEvent, runEventDetectors } from "./events";
+import { embedderFor } from "./embeddings";
 import { kmHandoffLoad, kmHandoffSave, kmWorkCurrent, kmWorkUpdate } from "./work-tools";
 import { trackerReadthrough } from "./trackers";
 
@@ -81,7 +82,7 @@ function buildServer(ctx: McpContext): McpServer {
     },
     async (args) => {
       const sessionId = await issueSession(ctx.claims);
-      const res = await tools.kmSearch(ctx.claims, args);
+      const res = await tools.kmSearch(ctx.claims, args, embedderFor(ctx.cfg));
       // Low-cardinality contract: args-hash + hit count only, never the query.
       await recordEvent(ctx.claims, sessionId, "search", {
         args_hash: argsHash(args),
@@ -243,7 +244,7 @@ function buildServer(ctx: McpContext): McpServer {
     },
     async (args) => {
       const sessionId = await issueSession(ctx.claims);
-      const res = await kmChat(ctx.claims, args);
+      const res = await kmChat(ctx.claims, args, embedderFor(ctx.cfg));
       await recordEvent(ctx.claims, sessionId, "chat", {
         args_hash: argsHash(args),
         mode: res.mode,

@@ -4,6 +4,7 @@
  */
 import { withClaims, type KmClaims } from "./db";
 import { DEMO_REPO } from "./config";
+import { vectorLiteral, type EmbedFn } from "./embeddings";
 
 export interface SearchHit {
   path: string;
@@ -20,8 +21,20 @@ export interface SearchHit {
 export async function kmSearch(
   claims: KmClaims,
   args: { query: string; limit?: number },
+  embed: EmbedFn | null = null,
 ): Promise<{ hits: SearchHit[]; indexed_sha: string | null }> {
   const limit = Math.min(args.limit ?? 8, 25);
+  // Hybrid search (docs/protocol.md): FTS recall + cosine similarity over
+  // chunk embeddings. The vector path is best-effort — any embedding failure
+  // degrades to pure FTS; search never breaks on the semantic path.
+  let qvec: string | null = null;
+  if (embed) {
+    try {
+      qvec = vectorLiteral((await embed([args.query]))[0]);
+    } catch (err) {
+      console.error(`query embedding failed (FTS fallback): ${(err as Error)?.message ?? err}`);
+    }
+  }
   return withClaims(claims, async (tx) => {
     // 1a/demo: freshness is tracked against the seeded mind repo (never
     // `limit 1` — multiple projects make that nondeterministic).
@@ -33,26 +46,52 @@ export async function kmSearch(
     const arr = (lexemes[0]?.arr as string[] | null) ?? null;
     if (!arr || arr.length === 0) return { hits: [] as SearchHit[], indexed_sha: indexedSha };
     const orQuery = arr.join(" | ");
-    const rows = await tx`
-      with q as (select to_tsquery('english', ${orQuery}) as tsq)
-      select c.content, c.heading, p.path, p.status, p.commit_sha, p.indexed_at,
-             p.sources, p.checks,
-             ts_rank_cd(to_tsvector('english', c.content), q.tsq)
-               + case when to_tsvector('english', coalesce(p.title, '')) @@ q.tsq
-                      then 0.5 else 0 end as score
-      from chunks c
-      join pages p on p.id = c.page_id
-      cross join q
-      where (to_tsvector('english', c.content) @@ q.tsq
-         or to_tsvector('english', coalesce(p.title, '')) @@ q.tsq)
-        and p.status <> 'tombstone'
-      order by score desc
+    const rows = qvec
+      ? await tx`
+      with q as (select to_tsquery('english', ${orQuery}) as tsq),
+      scored as (
+        select c.content, c.heading, p.path, p.status, p.commit_sha, p.indexed_at,
+               p.sources, p.checks,
+               (ts_rank_cd(to_tsvector('english', c.content), q.tsq)
+                 + case when to_tsvector('english', coalesce(p.title, '')) @@ q.tsq
+                        then 0.5 else 0 end) as fts,
+               case when c.embedding is null then 0
+                    else 1 - (c.embedding <=> cast(${qvec} as vector)) end as vec
+        from chunks c
+        join pages p on p.id = c.page_id
+        cross join q
+        where (to_tsvector('english', c.content) @@ q.tsq
+           or to_tsvector('english', coalesce(p.title, '')) @@ q.tsq
+           or c.embedding is not null)
+          and p.status <> 'tombstone'
+      )
+      select * from scored
+      order by fts + vec desc
+      limit ${limit}`
+      : await tx`
+      with q as (select to_tsquery('english', ${orQuery}) as tsq),
+      scored as (
+        select c.content, c.heading, p.path, p.status, p.commit_sha, p.indexed_at,
+               p.sources, p.checks,
+               (ts_rank_cd(to_tsvector('english', c.content), q.tsq)
+                 + case when to_tsvector('english', coalesce(p.title, '')) @@ q.tsq
+                        then 0.5 else 0 end) as fts,
+               0 as vec
+        from chunks c
+        join pages p on p.id = c.page_id
+        cross join q
+        where (to_tsvector('english', c.content) @@ q.tsq
+           or to_tsvector('english', coalesce(p.title, '')) @@ q.tsq)
+          and p.status <> 'tombstone'
+      )
+      select * from scored
+      order by fts desc
       limit ${limit}`;
     const hits: SearchHit[] = rows.map((r) => ({
       path: r.path as string,
       heading: (r.heading as string | null) ?? null,
       excerpt: excerptOf(r.content as string, args.query),
-      score: Number(r.score),
+      score: Number(r.fts) + Number(r.vec),
       status: r.status as string,
       superseded_by: supersededBy(r),
       index_stale: indexedSha !== null && r.commit_sha !== indexedSha,
@@ -202,13 +241,14 @@ export interface ChatResult {
 export async function kmChat(
   claims: KmClaims,
   args: { question: string; mode?: "standard" | "deep"; limit?: number },
+  embed: EmbedFn | null = null,
 ): Promise<ChatResult> {
   const t0 = Date.now();
   const mode = args.mode ?? "standard";
   const limit = Math.min(args.limit ?? (mode === "deep" ? 16 : 8), 25);
   const toolEvents: Array<Record<string, unknown>> = [];
 
-  const search = await kmSearch(claims, { query: args.question, limit });
+  const search = await kmSearch(claims, { query: args.question, limit }, embed);
   toolEvents.push({ tool: "km_search", query: args.question, limit, hits: search.hits.length });
 
   const evidence: ChatEvidence[] = search.hits.map((h) => ({ ...h, via: "search" as const }));

@@ -19,6 +19,7 @@ import { githubCallback, startGitHubLogin } from "./owner-auth";
 import { deviceApprove, deviceAuthorization, deviceDeny, devicePage } from "./device-grant";
 import { ingestRepo } from "./indexer/ingest";
 import { headSha, isRepo } from "./indexer/git";
+import { embedOpts } from "./embeddings";
 
 export async function bootDemo(cfg: Config): Promise<void> {
   if (!hasDb() || !cfg.mindPath) return;
@@ -41,6 +42,7 @@ export async function bootDemo(cfg: Config): Promise<void> {
     repoId: DEMO_REPO,
     namespaceId: DEMO_NAMESPACE,
     repoPath: cfg.mindPath,
+    ...embedOpts(cfg),
   });
   console.log(
     `indexed ${stats.pages} pages (${stats.chunks} chunks, ${stats.skipped} cached) @ ${stats.headSha.slice(0, 7)}`,

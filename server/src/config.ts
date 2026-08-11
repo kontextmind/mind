@@ -27,8 +27,19 @@ export interface Config {
   /** GitHub API base for read-throughs (GHE/test injectable), token optional. */
   githubApi: string;
   githubApiToken: string | null;
+  /** Embeddings (hybrid search): OpenAI-compatible endpoint, or null = FTS-only. */
+  embeddings: EmbeddingsConfig | null;
   /** Requests/minute per IP for the auth endpoints (B1 rate limiting). */
   authRateLimit: number;
+}
+
+export interface EmbeddingsConfig {
+  /** OpenAI-compatible base URL (OpenAI, compatible gateways, Ollama…). */
+  url: string;
+  model: string;
+  apiKey: string;
+  /** Must match chunks.embedding vector(1536) unless the schema changes. */
+  dim: number;
 }
 
 export function loadConfig(): Config {
@@ -63,6 +74,15 @@ export function loadConfig(): Config {
     ownerAuth,
     githubApi: process.env.KM_GITHUB_API ?? "https://api.github.com",
     githubApiToken: process.env.KM_GITHUB_API_TOKEN ?? null,
+    embeddings:
+      process.env.KM_EMBEDDINGS_API_KEY || process.env.KM_EMBEDDINGS_URL
+        ? {
+            url: process.env.KM_EMBEDDINGS_URL ?? "https://api.openai.com/v1",
+            model: process.env.KM_EMBEDDINGS_MODEL ?? "text-embedding-3-small",
+            apiKey: process.env.KM_EMBEDDINGS_API_KEY ?? "",
+            dim: Number(process.env.KM_EMBEDDINGS_DIM ?? 1536),
+          }
+        : null,
     github:
       ownerAuth === "github"
         ? {

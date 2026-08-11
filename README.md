@@ -14,10 +14,10 @@ and an OAuth login.
   (`KM-Session` commit trailers), detects loop patterns, drift, and knowledge gaps,
   and recommends improvements with proof on a dashboard.
 
-> Status: **phase 1i** — read/write paths, review queue, secret gates,
+> Status: **phase 1n** — read/write paths, review queue, secret gates,
 > evidence-spine webhook join, WI insights, work context, event stream,
-> hosted-mode OAuth 2.1 (PKCE + DCR + audience binding) with the GitHub
-> owner seam live. See `docs/` for the contracts and the plan of record.
+> hosted-mode OAuth 2.1 with the GitHub owner seam, hybrid FTS+vector
+> search. See `docs/` for the contracts and the plan of record.
 
 ## Quickstart (demo)
 
