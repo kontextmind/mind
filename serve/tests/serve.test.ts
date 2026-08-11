@@ -105,11 +105,9 @@ describeMaybe("serve boot e2e (disposable db)", () => {
     const maint = postgres(maintUrl, { max: 1, onnotice: () => {} });
     try {
       await maint.unsafe(`create database "${name}"`);
-      await maint.unsafe(`do $$ begin
-        if not exists (select 1 from pg_roles where rolname = 'km_app') then
-          create role km_app login password 'km-demo-local';
-        end if;
-      end $$`);
+      // Deliberately NOT creating km_app here: serve must bootstrap the
+      // request-path role itself (password from server.json). If serve
+      // skips that, every /mcp + /v1 assertion below fails loudly.
     } finally {
       await maint.end({ timeout: 5 });
     }

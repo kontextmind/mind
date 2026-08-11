@@ -40,6 +40,8 @@ export interface ServeInfo {
 export interface ServerState {
   token: string;
   db_password: string;
+  /** Password for the km_app request-path role (created at boot). */
+  app_password: string;
   created_at: string;
 }
 
@@ -87,14 +89,21 @@ export function ensureMindRepo(mindPath: string): "created" | "existing" {
   return "created";
 }
 
-/** Generate-or-reuse server state (token + db password). Idempotent. */
+/** Generate-or-reuse server state (token + passwords). Idempotent. */
 export function ensureServerJson(path: string): { state: ServerState; created: boolean } {
   if (existsSync(path)) {
-    return { state: JSON.parse(readFileSync(path, "utf8")) as ServerState, created: false };
+    const state = JSON.parse(readFileSync(path, "utf8")) as ServerState;
+    if (!state.app_password) {
+      // Pre-app_password installs: mint one and persist it.
+      state.app_password = randomBytes(16).toString("hex");
+      writeFileSync(path, `${JSON.stringify(state, null, 2)}\n`);
+    }
+    return { state, created: false };
   }
   const state: ServerState = {
     token: `km_tok_${randomBytes(16).toString("hex")}`,
     db_password: randomBytes(16).toString("hex"),
+    app_password: randomBytes(16).toString("hex"),
     created_at: new Date().toISOString(),
   };
   mkdirSync(join(path, ".."), { recursive: true });
@@ -216,7 +225,9 @@ export interface StartedServe {
 export async function startServe(opts: StartServeOptions = {}): Promise<StartedServe> {
   const dataDir = resolve(opts.dataDir ?? defaultDataDir());
   mkdirSync(dataDir, { recursive: true });
-  const mindPath = join(dataDir, "mind");
+  // Bring your own mind: KM_MIND_PATH wins over the bootstrapped default —
+  // that's how an existing mind repo (e.g. mind-kontextmind) gets served.
+  const mindPath = resolve(process.env.KM_MIND_PATH ?? join(dataDir, "mind"));
   const mindStatus = ensureMindRepo(mindPath);
   const { state, created } = ensureServerJson(join(dataDir, "server.json"));
 
@@ -225,6 +236,19 @@ export async function startServe(opts: StartServeOptions = {}): Promise<StartedS
   const admin = postgres(db.url, { max: 1, onnotice: () => {} });
   try {
     await runMigrations(admin, MIGRATIONS);
+    // The request path runs as km_app (RLS applies to it). Containers created
+    // here know only their POSTGRES_USER — so serve owns this role end to end,
+    // password generated into server.json. Migration 0002 may have created
+    // km_app without a password; both cases converge here.
+    await admin.unsafe(
+      `do $$ begin
+        if not exists (select 1 from pg_roles where rolname = 'km_app') then
+          create role km_app login password '${state.app_password}';
+        else
+          alter role km_app with login password '${state.app_password}';
+        end if;
+      end $$`,
+    );
   } finally {
     await admin.end({ timeout: 5 });
   }
@@ -233,6 +257,7 @@ export async function startServe(opts: StartServeOptions = {}): Promise<StartedS
   process.env.DATABASE_URL = db.url;
   process.env.KM_MIND_PATH = mindPath;
   process.env.KM_DEMO_TOKEN = state.token;
+  process.env.KM_APP_PASSWORD = state.app_password;
   process.env.KM_MODE = opts.mode ?? "demo";
   const cfg = loadConfig();
   if (cfg.mode === "demo") await bootDemo(cfg);
