@@ -18,3 +18,4 @@ coverage/
 demo/mind/
 .kontextmind/session
 cli/dist/
+serve/dist/

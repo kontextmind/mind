@@ -34,6 +34,7 @@ jobs:
           bun install --no-save
           cd server && bun install --no-save
           cd ../cli && bun install --no-save
+          cd ../serve && bun install --no-save
       - name: Seed demo mind
         run: bun run seed
       - name: Tests (unit + isolation harness + MCP end-to-end)
