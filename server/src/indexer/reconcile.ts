@@ -7,6 +7,7 @@
 import type postgres from "postgres";
 import * as gitMod from "./git";
 import { ingestRepo } from "./ingest";
+import type { EmbedFn } from "../embeddings";
 
 export interface ReconcileResult {
   repoId: string;
@@ -18,7 +19,15 @@ export interface ReconcileResult {
 
 export async function reconcileRepo(
   sql: postgres.Sql,
-  opts: { repoId: string; namespaceId: string; repoPath: string; repair?: boolean },
+  opts: {
+    repoId: string;
+    namespaceId: string;
+    repoPath: string;
+    repair?: boolean;
+    /** Forwarded to ingestRepo when drift repair re-ingests. */
+    embed?: EmbedFn | null;
+    embedderVersion?: string;
+  },
 ): Promise<ReconcileResult> {
   const repair = opts.repair ?? true;
   const head = gitMod.headSha(opts.repoPath);

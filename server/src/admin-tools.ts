@@ -8,6 +8,7 @@ import { adminDb, withClaims, type KmClaims } from "./db";
 import { DEMO_REPO, type Config } from "./config";
 import { reconcileRepo, type ReconcileResult } from "./indexer/reconcile";
 import { ingestRepo, type IngestStats } from "./indexer/ingest";
+import { embedOpts } from "./embeddings";
 import { isRepo } from "./indexer/git";
 
 function requireSteward(claims: KmClaims): void {
@@ -72,6 +73,7 @@ export async function kmReindex(
     namespaceId: ns,
     repoPath,
     repair: true,
+    ...embedOpts(ctx.cfg),
   });
 }
 
@@ -148,7 +150,7 @@ export async function kmProjectAdd(
 
   let indexed: IngestStats | null = null;
   if (args.path) {
-    indexed = await ingestRepo(adminDb(), { repoId: row.id, namespaceId: ns, repoPath: args.path });
+    indexed = await ingestRepo(adminDb(), { repoId: row.id, namespaceId: ns, repoPath: args.path, ...embedOpts(ctx.cfg) });
   }
 
   return {

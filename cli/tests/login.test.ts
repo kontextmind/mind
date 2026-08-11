@@ -42,6 +42,7 @@ describeMaybe("kontext login (device grant)", () => {
     github: null,
     githubApi: "https://api.github.com",
     githubApiToken: null,
+    embeddings: null,
     authRateLimit: 10000,
   });
 

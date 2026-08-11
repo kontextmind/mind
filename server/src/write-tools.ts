@@ -9,6 +9,7 @@ import { scanContent, isLowRiskLearning } from "./secrets";
 import { writeDraft, promoteDraft, supersede, assertSupersedable } from "./indexer/write";
 import { ingestRepo } from "./indexer/ingest";
 import { kmSearch } from "./tools";
+import { embedOpts } from "./embeddings";
 
 export interface WriteCtx {
   cfg: Config;
@@ -47,6 +48,7 @@ async function reindex(cfg: Config): Promise<void> {
     repoId: DEMO_REPO,
     namespaceId: DEMO_NAMESPACE,
     repoPath: cfg.mindPath,
+    ...embedOpts(cfg),
   });
 }
 

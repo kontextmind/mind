@@ -46,6 +46,7 @@ describeMaybe("owner seam: GitHub OAuth", () => {
     github: { clientId: "cid-test", clientSecret: "sec-test", base: ghBase, api: ghBase },
     githubApi: ghBase,
     githubApiToken: null,
+    embeddings: null,
     authRateLimit: 10000,
   });
 

@@ -11,22 +11,31 @@ import { createHash } from "node:crypto";
 import type postgres from "postgres";
 import { chunkPage, wikilinks } from "./parse";
 import * as gitMod from "./git";
+import { embedInBatches, vectorLiteral, type EmbedFn } from "../embeddings";
 
 export interface IngestStats {
   pages: number;
   chunks: number;
   skipped: number;
+  embedded: number;
   headSha: string;
 }
 
 export async function ingestRepo(
   sql: postgres.Sql,
-  opts: { repoId: string; namespaceId: string; repoPath: string },
+  opts: {
+    repoId: string;
+    namespaceId: string;
+    repoPath: string;
+    /** Optional embeddings (hybrid search). Failures degrade to FTS-only. */
+    embed?: EmbedFn | null;
+    embedderVersion?: string;
+  },
 ): Promise<IngestStats> {
   const { repoId, namespaceId, repoPath } = opts;
   const head = gitMod.headSha(repoPath);
   const entries = gitMod.tree(repoPath);
-  const stats: IngestStats = { pages: 0, chunks: 0, skipped: 0, headSha: head };
+  const stats: IngestStats = { pages: 0, chunks: 0, skipped: 0, embedded: 0, headSha: head };
 
   const cached = new Map<string, string>(
     (
@@ -80,6 +89,23 @@ export async function ingestRepo(
 
     stats.pages++;
     stats.chunks += chunks.length;
+
+    // Embeddings run OUTSIDE the page transaction (remote call) and degrade
+    // gracefully: the chunks are already searchable via FTS at this point.
+    if (opts.embed) {
+      try {
+        const vectors = await embedInBatches(opts.embed, chunks.map((c) => c.content));
+        for (let i = 0; i < chunks.length; i++) {
+          const lit = vectorLiteral(vectors[i]);
+          await sql`update chunks
+            set embedding = cast(${lit} as vector), embedder_version = ${opts.embedderVersion ?? "v1"}
+            where id = ${`${pageId}_${chunks[i].ord}`}`;
+          stats.embedded++;
+        }
+      } catch (err) {
+        console.error(`embeddings failed for ${entry.path}: ${(err as Error)?.message ?? err}`);
+      }
+    }
   }
 
   // Tombstone pages deleted from the tree.
