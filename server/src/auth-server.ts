@@ -17,6 +17,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { adminDb } from "./db";
 import { canonicalResource, type Config } from "./config";
 import { resolveOwner } from "./owner-auth";
+import { DEVICE_GRANT_TYPE } from "./device-grant";
 import type { KmClaims } from "./db";
 
 export const ACCESS_TTL_S = 3600;
@@ -75,8 +76,9 @@ export function authorizationServerMetadata(cfg: Config): Response {
     authorization_endpoint: `${issuer}/authorize`,
     token_endpoint: `${issuer}/token`,
     registration_endpoint: `${issuer}/register`,
+    device_authorization_endpoint: `${issuer}/device_authorization`,
     code_challenge_methods_supported: ["S256"],
-    grant_types_supported: ["authorization_code", "refresh_token"],
+    grant_types_supported: ["authorization_code", "refresh_token", DEVICE_GRANT_TYPE],
     response_types_supported: ["code"],
     token_endpoint_auth_methods_supported: ["none"],
   });
@@ -283,6 +285,10 @@ export async function token(req: Request, cfg: Config): Promise<Response> {
     return Response.json({ error: "invalid_target" }, { status: 400 });
   }
 
+  if (grant === DEVICE_GRANT_TYPE) {
+    return deviceTokenPoll(cfg, form);
+  }
+
   if (grant === "authorization_code") {
     const code = form.get("code") ?? "";
     const rows = code
@@ -337,6 +343,50 @@ function timingSafeEqualHex(a: string, b: string): boolean {
   const ba = Buffer.from(a, "utf8");
   const bb = Buffer.from(b, "utf8");
   return ba.length === bb.length && timingSafeEqual(ba, bb);
+}
+
+/**
+ * RFC 8628 polling leg. The box repeats this; the grant's verdict (set by the
+ * owner through /device) decides the outcome: too-fast → slow_down (interval
+ * grows +5s per RFC), pending → authorization_pending, tokens are minted
+ * once on approval (consumed atomically).
+ */
+async function deviceTokenPoll(cfg: Config, form: URLSearchParams): Promise<Response> {
+  const sql = adminDb();
+  const deviceCode = form.get("device_code") ?? "";
+  const rows = deviceCode
+    ? await sql`select * from oauth_device_grants where device_code = ${deviceCode}`
+    : [];
+  if (rows.length === 0) return Response.json({ error: "invalid_grant" }, { status: 400 });
+  const g = rows[0];
+  if ((g.expires_at as Date) <= new Date()) {
+    return Response.json({ error: "expired_token" }, { status: 400 });
+  }
+  if (g.status === "denied") return Response.json({ error: "access_denied" }, { status: 400 });
+  if (g.status === "consumed") return Response.json({ error: "invalid_grant" }, { status: 400 });
+  if (g.status === "pending") {
+    const intervalMs = Number(g.interval_s) * 1000;
+    if (g.last_poll && Date.now() - (g.last_poll as Date).getTime() < intervalMs) {
+      await sql`update oauth_device_grants set interval_s = interval_s + 5
+        where device_code = ${deviceCode}`;
+      return Response.json({ error: "slow_down" }, { status: 400 });
+    }
+    await sql`update oauth_device_grants set last_poll = now() where device_code = ${deviceCode}`;
+    return Response.json({ error: "authorization_pending" }, { status: 400 });
+  }
+  // approved → consume atomically, then mint audience-bound tokens for the
+  // approving owner. Approval recorded intent; token issuance bootstraps the
+  // tenant (the headless box's human may never visit /authorize themselves).
+  if (g.client_id !== form.get("client_id")) {
+    return Response.json({ error: "invalid_grant" }, { status: 400 });
+  }
+  const taken = await sql`
+    update oauth_device_grants set status = 'consumed'
+    where device_code = ${deviceCode} and status = 'approved'
+    returning approved_by, resource`;
+  if (taken.length === 0) return Response.json({ error: "invalid_grant" }, { status: 400 });
+  const userId = await bootstrapUser(String(taken[0].approved_by));
+  return Response.json(await issueTokens(String(g.client_id), userId, String(taken[0].resource)));
 }
 
 // ---------------------------------------------------------------------------

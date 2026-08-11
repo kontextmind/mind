@@ -50,8 +50,25 @@ namespace.
   a token presented with the wrong `resource` is rejected at issuance and
   again at resolution.
 
+## Device-authorization grant (RFC 8628)
+
+Headless boxes (threat-model principal) have no browser:
+
+1. Box: `POST /device_authorization` (client_id + resource) → `device_code`,
+   `user_code` (`XXXX-XXXX`, unambiguous alphabet), `verification_uri`,
+   15m TTL, 5s polling interval.
+2. Human: `GET /device` (owner-authenticated) → enters the code →
+   `POST /device/approve` (or `/device/deny`).
+3. Box polls `POST /token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code`:
+   `authorization_pending` / `slow_down` (interval grows +5s per RFC) /
+   `access_denied` / `expired_token` / tokens — minted once, consumed
+   atomically, audience-bound like code-flow tokens.
+
+The device code never touches the browser; the user code alone authorizes
+nothing — the owner verdict is the gate. Approval bootstraps the tenant at
+token issuance (the box's human may never visit `/authorize`).
+
 ## Not yet
 
 - Consent screen UI (v1 authorizes directly after owner authentication)
-- Device-authorization grant for headless boxes (threat-model principals)
 - Per-identity rate budgets on `/mcp` itself
