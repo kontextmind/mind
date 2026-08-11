@@ -40,7 +40,7 @@ export function updateNotice(current: string, latest: string): string | null {
   if (compareVersions(current, latest) >= 0) return null;
   return (
     `KontextMind ${latest} is out (you are on ${current}). ` +
-    `Update with \`npm i -g @kontext-mind/cli\` (or git pull in your checkout), ` +
+    `Update with \`npm i -g @kontextmind/cli\` (or git pull in your checkout), ` +
     `then re-run \`kontext init\`.`
   );
 }

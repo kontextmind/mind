@@ -30,7 +30,7 @@ docker compose -f deploy/docker-compose.yml up
 Then in another terminal:
 
 ```bash
-npm install -g @kontext-mind/cli
+npm install -g @kontextmind/cli
 kontext search "why did KontextMind drop Supabase"
 # → decisions/0007 (verified) + decisions/0006 flagged SUPERSEDED
 ```
@@ -65,7 +65,7 @@ another instance.
 | Path | What |
 |---|---|
 | `server/` | KontextMind server (MCP endpoint, indexer, OAuth AS, webhook join, WI detectors) |
-| `cli/` | `kontext` CLI — published as [`@kontext-mind/cli`](https://www.npmjs.com/package/@kontext-mind/cli) |
+| `cli/` | `kontext` CLI — published as [`@kontextmind/cli`](https://www.npmjs.com/package/@kontextmind/cli) |
 | `skills/` | Agent Skills (open standard, docs-only): query / harvest / triage / status |
 | `migrations/` | Postgres schema + RLS policies (numbered, idempotent) |
 | `deploy/` | docker-compose dev stack; Dockerfile for hosted |
