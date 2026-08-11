@@ -17,3 +17,4 @@ coverage/
 *.tsbuildinfo
 demo/mind/
 .kontextmind/session
+cli/dist/

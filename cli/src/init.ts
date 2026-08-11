@@ -20,10 +20,14 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Portable across bun (source) and node (npm bundle): this file's directory.
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 export const CLI_VERSION: string = (
-  JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")) as { version: string }
+  JSON.parse(readFileSync(join(HERE, "..", "package.json"), "utf8")) as { version: string }
 ).version;
 
 export const HOOK_MARKER = "# kontextmind:trailer-hook v1";
