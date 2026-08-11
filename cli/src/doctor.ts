@@ -69,7 +69,13 @@ export async function latestRelease(
       return cached.latest;
     }
     const res = await fetchImpl(RELEASES_URL, {
-      headers: { accept: "application/vnd.github+json" },
+      headers: {
+        accept: "application/vnd.github+json",
+        // Private repos need a token; public ones work unauthenticated.
+        ...(process.env.GITHUB_TOKEN
+          ? { authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
+          : {}),
+      },
       signal: AbortSignal.timeout(2000),
     });
     const latest = res.ok
