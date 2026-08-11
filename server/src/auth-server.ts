@@ -281,7 +281,14 @@ export async function token(req: Request, cfg: Config): Promise<Response> {
   const grant = form.get("grant_type");
   const sql = adminDb();
 
-  if ((form.get("resource") ?? "") !== issuer) {
+  // Audience binding: the code grant must declare it; refresh and device
+  // grants already carry it (stored token row / grant row) — RFC 8707 makes
+  // `resource` optional on refresh, and repeating it must still match.
+  const resource = form.get("resource");
+  if (grant === "authorization_code" && resource !== issuer) {
+    return Response.json({ error: "invalid_target" }, { status: 400 });
+  }
+  if (grant === "refresh_token" && resource !== null && resource !== issuer) {
     return Response.json({ error: "invalid_target" }, { status: 400 });
   }
 
@@ -333,7 +340,10 @@ export async function token(req: Request, cfg: Config): Promise<Response> {
     if (row.client_id !== form.get("client_id")) {
       return Response.json({ error: "invalid_grant" }, { status: 400 });
     }
-    return Response.json(await issueTokens(String(row.client_id), String(row.user_id), issuer));
+    // New pair inherits the old token's audience.
+    return Response.json(
+      await issueTokens(String(row.client_id), String(row.user_id), String(row.audience)),
+    );
   }
 
   return json400("unsupported_grant_type");
