@@ -155,11 +155,11 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
   test("km_status beacon: skill is echoed AND persisted to skill_use", async () => {
     const c = await connect();
     const res = parse(
-      await c.callTool({ name: "km_status", arguments: { skill: "kontextmind-query" } }),
+      await c.callTool({ name: "km_status", arguments: { skill: "mind-query" } }),
     );
-    expect(res.beacon).toEqual({ skill: "kontextmind-query", provenance: "beacon" });
+    expect(res.beacon).toEqual({ skill: "mind-query", provenance: "beacon" });
     const rows = await admin`select skill, provenance, org_id from skill_use
-      where session_id = ${res.session_id} and skill = 'kontextmind-query'`;
+      where session_id = ${res.session_id} and skill = 'mind-query'`;
     expect(rows.length).toBe(1);
     expect(rows[0].provenance).toBe("beacon");
     expect(rows[0].org_id).toBe(DEMO_ORG);
