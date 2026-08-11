@@ -24,7 +24,7 @@ and an OAuth login.
 ```bash
 npx kontextmind serve        # boots on http://127.0.0.1:13013/mcp
                              # data: ~/.kontextmind (mind git repo + server.json)
-                             # db: DATABASE_URL → docker container → local Postgres
+                             # db: DATABASE_URL → docker → local Postgres → embedded
 ```
 
 **From source:**

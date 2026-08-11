@@ -2,10 +2,17 @@
 -- Domain schema + RLS. Better Auth core tables (user, session, account,
 -- verification, oauth clients/tokens, organization plugin tables) are managed
 -- by the Better Auth CLI (`bunx @better-auth/cli generate`) and live alongside.
--- Requires: PostgreSQL 15+, pgvector.
+-- Requires: PostgreSQL 15+. pgvector is OPTIONAL: without it the schema
+-- degrades to FTS-only search (embedded tier, decision: honest degradation
+-- over a hard dependency). Vector bits are created conditionally below.
 
-create extension if not exists vector;
 create extension if not exists pgcrypto;
+do $$
+begin
+  create extension if not exists vector;
+exception when others then
+  raise notice 'pgvector unavailable — hybrid search degrades to FTS-only';
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- Orgs & namespaces (instance = org boundary; namespaces = RLS boundary)
@@ -82,12 +89,18 @@ create table if not exists chunks (
   namespace_id  text not null references namespaces(id) on delete cascade,
   ord           int not null,
   content       text not null,
-  embedding     vector(1536),
   embedder_version text not null default 'v1',
   commit_sha    text not null,
   unique (page_id, ord)
 );
-create index if not exists chunks_embedding_idx on chunks using hnsw (embedding vector_cosine_ops);
+-- Vector column + HNSW index only when pgvector is present (see header).
+do $$
+begin
+  alter table chunks add column if not exists embedding vector(1536);
+  create index if not exists chunks_embedding_idx on chunks using hnsw (embedding vector_cosine_ops);
+exception when others then
+  raise notice 'chunks.embedding skipped (no pgvector) — FTS-only search';
+end $$;
 create index if not exists chunks_fts_idx on chunks using gin (to_tsvector('english', content));
 
 create table if not exists graph_edges (

@@ -18,6 +18,9 @@ const res = spawnSync(
     "build", "src/entry.ts", "--target=node", "--outdir", "dist",
     "--external", "@modelcontextprotocol/sdk",
     "--external", "postgres",
+    // Platform binaries are optionalDependencies resolved at install time —
+    // keep the dynamic imports dynamic.
+    "--external", "embedded-postgres",
   ],
   { cwd: here, encoding: "utf8" },
 );

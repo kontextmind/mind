@@ -92,7 +92,9 @@ persistence (all under the data dir):
       ? "docker container kontextmind-pg (volume kontextmind-pgdata)"
       : info.dbSource === "env"
         ? "DATABASE_URL"
-        : info.dbSource;
+        : info.dbSource === "embedded"
+          ? "embedded Postgres (db/ inside the data dir; no pgvector — search is FTS-only)"
+          : info.dbSource;
   console.log(`
 kontextmind serving on http://${hostname}:${boundPort}${info.mode === "demo" ? "/mcp" : ""}
   runtime  ${runtime} · mode ${info.mode}

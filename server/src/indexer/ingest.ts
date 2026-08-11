@@ -44,6 +44,11 @@ export async function ingestRepo(
   );
 
   const seen = new Set<string>();
+  const hasVec =
+    (
+      await sql`select 1 from information_schema.columns
+        where table_name = 'chunks' and column_name = 'embedding'`
+    ).length > 0;
 
   for (const entry of entries) {
     seen.add(entry.path);
@@ -92,7 +97,8 @@ export async function ingestRepo(
 
     // Embeddings run OUTSIDE the page transaction (remote call) and degrade
     // gracefully: the chunks are already searchable via FTS at this point.
-    if (opts.embed) {
+    // Skipped entirely on schemas without the embedding column (no pgvector).
+    if (opts.embed && hasVec) {
       try {
         const vectors = await embedInBatches(opts.embed, chunks.map((c) => c.content));
         for (let i = 0; i < chunks.length; i++) {
