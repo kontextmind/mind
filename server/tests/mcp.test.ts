@@ -746,4 +746,57 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
     expect(again.insights.filter((i: any) => i.title.includes("empty searches")).length).toBe(1);
     await c.close();
   });
+
+  // ------------------------------------------------------------------ /v1
+  // The native transport (CLI fast path) wraps the SAME dispatch as MCP:
+  // same tools, same args, same responses — one source of truth.
+
+  const v1 = async (tool: string, args: Record<string, unknown> = {}, token = "km-demo-local") => {
+    const res = await fetch(baseUrl.replace(/\/mcp$/, "") + "/v1/call", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ tool, args }),
+    });
+    return { status: res.status, body: (await res.json().catch(() => null)) as any };
+  };
+
+  test("/v1/call parity: same dispatch as MCP, identical results", async () => {
+    const c = await connect();
+    const viaMcp = parse(
+      await c.callTool({ name: "km_search", arguments: { query: "Supabase control plane" } }),
+    );
+    await c.close();
+    const viaV1 = await v1("km_search", { query: "Supabase control plane" });
+    expect(viaV1.status).toBe(200);
+    expect(viaV1.body.ok).toBe(true);
+    const pathsV1 = (viaV1.body.result.hits ?? []).map((h: any) => h.path).sort();
+    const pathsMcp = (viaMcp.hits ?? []).map((h: any) => h.path).sort();
+    expect(pathsV1).toEqual(pathsMcp);
+    expect(pathsV1.length).toBeGreaterThan(0);
+  });
+
+  test("/v1/call: auth, protocol errors, and tool errors", async () => {
+    expect((await v1("km_search", { query: "x" }, "wrong-token")).status).toBe(401);
+    const badJson = await fetch(baseUrl.replace(/\/mcp$/, "") + "/v1/call", {
+      method: "POST",
+      headers: { authorization: "Bearer km-demo-local", "content-type": "application/json" },
+      body: "{",
+    });
+    expect(badJson.status).toBe(400);
+    const unknown = await v1("km_nope");
+    expect(unknown.status).toBe(200);
+    expect(unknown.body.ok).toBe(false);
+    expect(unknown.body.result.error).toContain("unknown tool");
+  });
+
+  test("CLI fast path: kontext search runs over /v1 end to end", async () => {
+    const { spawnSync } = await import("node:child_process");
+    const res = spawnSync(
+      "bun",
+      ["run", join(repoRoot, "cli", "src", "index.ts"), "search", "Supabase", "control", "plane"],
+      { encoding: "utf8", env: { ...process.env, KM_URL: baseUrl, KM_TOKEN: "km-demo-local" } },
+    );
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain("decisions/");
+  });
 });

@@ -7,6 +7,7 @@ import { adminDb, hasDb } from "./db";
 import { authenticate } from "./auth";
 import { handleMcp } from "./mcp";
 import { handleGitHubWebhook } from "./webhook";
+import { handleV1Call } from "./http-api";
 import { budgetFor, principalLimited } from "./budgets";
 import {
   authorizationServerMetadata,
@@ -51,9 +52,10 @@ export async function bootDemo(cfg: Config): Promise<void> {
   );
 }
 
-export function createFetch(cfg: Config): (req: Request) => Response | Promise<Response> {
+/** Freshness probe against the configured mind repo (cached). */
+export function headShaOf(cfg: Config): () => string | null {
   let cachedHead: string | null = null;
-  const currentHead = (): string | null => {
+  return () => {
     if (!cfg.mindPath) return cachedHead;
     try {
       cachedHead = headSha(cfg.mindPath);
@@ -62,6 +64,10 @@ export function createFetch(cfg: Config): (req: Request) => Response | Promise<R
     }
     return cachedHead;
   };
+}
+
+export function createFetch(cfg: Config): (req: Request) => Response | Promise<Response> {
+  const currentHead = headShaOf(cfg);
 
   return async (req) => {
     const url = new URL(req.url);
@@ -132,6 +138,10 @@ export function createFetch(cfg: Config): (req: Request) => Response | Promise<R
         { error: "not_implemented", detail: "OAuth discovery is hosted-mode only" },
         { status: 501 },
       );
+    }
+
+    if (url.pathname === "/v1/call") {
+      return handleV1Call(req, cfg);
     }
 
     if (url.pathname === "/mcp") {

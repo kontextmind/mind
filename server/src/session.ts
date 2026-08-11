@@ -1,8 +1,10 @@
 /**
  * KM-Session groundwork (Agent Evidence Trailers v1 — docs/session-spine.md).
- * 1a: issue session IDs, parse trailers. Joining to git evidence lands with
- * the webhook ingestion in 1b/hosted mode.
+ * Session issuance + beacon handshake live here (shared by the MCP endpoint
+ * and the native /v1 API through tool-dispatch). Joining to git evidence
+ * happens in webhook.ts.
  */
+import { withClaims, type KmClaims } from "./db";
 
 const ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
@@ -35,4 +37,49 @@ export function parseKmTrailers(commitMessage: string): string[] {
     out.push(m[1]);
   }
   return out;
+}
+
+const sessionsByPrincipal = new Map<string, string>();
+
+export async function issueSession(claims: KmClaims): Promise<string> {
+  let id = sessionsByPrincipal.get(claims.sub);
+  if (id) return id;
+  id = newSessionId();
+  sessionsByPrincipal.set(claims.sub, id);
+  try {
+    // Claims-bound write (RLS org policy permits it); the session row carries
+    // the claims' org, which is the tenant boundary the webhook join checks.
+    // repo binding: first repo registered to the caller's primary namespace —
+    // it lets event-driven detectors attribute insights to a namespace.
+    const primaryNs = claims.namespaces[0] ?? null;
+    await withClaims(claims, async (tx) => {
+      const repo = primaryNs
+        ? await tx`select id from repos where default_namespace_id = ${primaryNs} limit 1`
+        : [];
+      const repoId = (repo[0]?.id as string | undefined) ?? null;
+      await tx`insert into km_sessions (id, org_id, principal, agent_kind, repo_id)
+        values (${id}, ${claims.org}, ${claims.sub},
+                ${claims.kind === "agent" ? "other" : null}, ${repoId})
+        on conflict (id) do nothing`;
+    });
+  } catch {
+    // session persistence is best-effort; the ID still echoes via km_status
+  }
+  return id;
+}
+
+/** Beacon handshake (docs/protocol.md km_status): skill context for a session. */
+export async function recordBeacon(
+  claims: KmClaims,
+  sessionId: string,
+  skill: string,
+): Promise<void> {
+  try {
+    await withClaims(claims, async (tx) => {
+      await tx`insert into skill_use (session_id, org_id, skill, provenance, weight)
+        values (${sessionId}, ${claims.org}, ${skill}, 'beacon', 1)`;
+    });
+  } catch {
+    // best-effort: km_status still echoes the beacon when persistence fails
+  }
 }
