@@ -37,6 +37,7 @@ describeMaybe("device-authorization grant (RFC 8628)", () => {
     githubApi: "https://api.github.com",
     githubApiToken: null,
     embeddings: null,
+    autoConsent: true,
     authRateLimit: 10000,
   });
 

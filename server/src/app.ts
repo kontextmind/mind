@@ -11,6 +11,8 @@ import { budgetFor, principalLimited } from "./budgets";
 import {
   authorizationServerMetadata,
   authorize,
+  consentApprove,
+  consentDeny,
   protectedResourceMetadata,
   registerClient,
   token,
@@ -97,6 +99,12 @@ export function createFetch(cfg: Config): (req: Request) => Response | Promise<R
       }
       if (url.pathname === "/authorize" && req.method === "GET") {
         return authorize(req, cfg);
+      }
+      if (url.pathname === "/authorize/approve" && req.method === "POST") {
+        return consentApprove(cfg, req);
+      }
+      if (url.pathname === "/authorize/deny" && req.method === "POST") {
+        return consentDeny(cfg, req);
       }
       if (url.pathname === "/token" && req.method === "POST") {
         return token(req, cfg);

@@ -167,7 +167,7 @@ export async function authorize(req: Request, cfg: Config): Promise<Response> {
 
   // Client validation happens BEFORE any redirect decision.
   const clients = clientId
-    ? await sql`select redirect_uris from oauth_clients where client_id = ${clientId}`
+    ? await sql`select redirect_uris, client_name from oauth_clients where client_id = ${clientId}`
     : [];
   if (clients.length === 0) return json400("unauthorized_client", "unknown client_id");
   const registered = (clients[0].redirect_uris as unknown as string[]) ?? [];
@@ -206,15 +206,116 @@ export async function authorize(req: Request, cfg: Config): Promise<Response> {
   }
   const userId = await bootstrapUser(owner.email);
 
+  // Consent gate: shown once per (client, owner), remembered afterwards.
+  // autoConsent (dev/test) skips it entirely.
+  if (!cfg.autoConsent) {
+    const consented = await sql`select 1 from oauth_consents
+      where client_id = ${clientId} and email = ${owner.email}`;
+    if (consented.length === 0) {
+      const pendingId = `azr_${randomBytes(16).toString("hex")}`;
+      await sql`insert into oauth_pending_authz
+        (id, client_id, email, redirect_uri, challenge, resource, state, expires_at)
+        values (${pendingId}, ${clientId}, ${owner.email}, ${redirectUri}, ${challenge},
+                ${resource}, ${q.get("state")}, now() + make_interval(secs => ${CODE_TTL_S}))`;
+      return consentPage(owner.email, (clients[0].client_name as string | null) ?? clientId, pendingId);
+    }
+  }
+  return finishAuthorization(clientId, userId, redirectUri, challenge, resource, q.get("state"));
+}
+
+/** Mint the one-time code and send the owner's browser back to the client. */
+async function finishAuthorization(
+  clientId: string,
+  userId: string,
+  redirectUri: string,
+  challenge: string,
+  resource: string,
+  state: string | null,
+): Promise<Response> {
+  const sql = adminDb();
   const code = `oc_${randomBytes(24).toString("hex")}`;
   await sql`insert into oauth_codes (code, client_id, user_id, redirect_uri, challenge, resource, expires_at)
     values (${code}, ${clientId}, ${userId}, ${redirectUri}, ${challenge}, ${resource},
             now() + make_interval(secs => ${CODE_TTL_S}))`;
-
   const back = new URL(redirectUri);
   back.searchParams.set("code", code);
-  const state = q.get("state");
   if (state) back.searchParams.set("state", state);
+  return Response.redirect(back.toString(), 302);
+}
+
+/** The consent screen: identity + client + approve/deny. No frameworks. */
+function consentPage(email: string, clientName: string, pendingId: string): Response {
+  const safe = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]!));
+  const html = `<!doctype html>
+<html><head><title>KontextMind — authorization</title></head>
+<body style="font-family:system-ui;max-width:32em;margin:4em auto">
+<h2>Authorize ${safe(clientName)}?</h2>
+<p>Signed in as <b>${safe(email)}</b>.</p>
+<p><b>${safe(clientName)}</b> is requesting access to your KontextMind org
+(memory, work context, and intelligence) via the MCP protocol.</p>
+<form method="post" action="/authorize/approve" style="display:inline">
+  <input type="hidden" name="authz_id" value="${safe(pendingId)}">
+  <button type="submit">Approve</button>
+</form>
+<form method="post" action="/authorize/deny" style="display:inline">
+  <input type="hidden" name="authz_id" value="${safe(pendingId)}">
+  <button type="submit" style="color:#900">Deny</button>
+</form>
+</body></html>`;
+  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+}
+
+/** Consume a pending authorization ONLY if it belongs to this owner. */
+async function consumePendingAuthz(
+  cfg: Config,
+  req: Request,
+): Promise<{ ok: true; row: Record<string, unknown> } | { ok: false; res: Response }> {
+  const owner = await resolveOwner(cfg, req);
+  if (!owner) return { ok: false, res: Response.json({ error: "access_denied" }, { status: 403 }) };
+  const form = new URLSearchParams(await req.text());
+  const id = form.get("authz_id") ?? "";
+  const sql = adminDb();
+  const rows = id
+    ? await sql`delete from oauth_pending_authz
+        where id = ${id} and expires_at > now() returning *`
+    : [];
+  if (rows.length === 0) {
+    return { ok: false, res: Response.json({ error: "invalid_request", detail: "unknown or expired authorization request" }, { status: 400 }) };
+  }
+  if (rows[0].email !== owner.email) {
+    // Someone else's pending request: consumed above (single-use), never approved.
+    return { ok: false, res: Response.json({ error: "access_denied", detail: "request belongs to another identity" }, { status: 403 }) };
+  }
+  return { ok: true, row: rows[0] };
+}
+
+/** POST /authorize/approve — record consent, then finish the authorization. */
+export async function consentApprove(cfg: Config, req: Request): Promise<Response> {
+  const consumed = await consumePendingAuthz(cfg, req);
+  if (!consumed.ok) return consumed.res;
+  const r = consumed.row;
+  const sql = adminDb();
+  await sql`insert into oauth_consents (client_id, email) values (${String(r.client_id)}, ${String(r.email)})
+    on conflict (client_id, email) do nothing`;
+  const userId = await bootstrapUser(String(r.email));
+  return finishAuthorization(
+    String(r.client_id),
+    userId,
+    String(r.redirect_uri),
+    String(r.challenge),
+    String(r.resource),
+    (r.state as string | null) ?? null,
+  );
+}
+
+/** POST /authorize/deny — the client hears access_denied; nothing is stored. */
+export async function consentDeny(cfg: Config, req: Request): Promise<Response> {
+  const consumed = await consumePendingAuthz(cfg, req);
+  if (!consumed.ok) return consumed.res;
+  const r = consumed.row;
+  const back = new URL(String(r.redirect_uri));
+  back.searchParams.set("error", "access_denied");
+  if (r.state) back.searchParams.set("state", String(r.state));
   return Response.redirect(back.toString(), 302);
 }
 

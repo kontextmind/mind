@@ -29,6 +29,8 @@ export interface Config {
   githubApiToken: string | null;
   /** Embeddings (hybrid search): OpenAI-compatible endpoint, or null = FTS-only. */
   embeddings: EmbeddingsConfig | null;
+  /** Skip the consent screen (dev/test). Default off: consent is shown once per client+owner. */
+  autoConsent: boolean;
   /** Requests/minute per IP for the auth endpoints (B1 rate limiting). */
   authRateLimit: number;
 }
@@ -92,6 +94,7 @@ export function loadConfig(): Config {
             api: process.env.KM_GITHUB_API ?? "https://api.github.com",
           }
         : null,
+    autoConsent: process.env.KM_AUTO_CONSENT === "1",
     authRateLimit: Number(process.env.KM_AUTH_RATE_LIMIT ?? 120),
   };
 }

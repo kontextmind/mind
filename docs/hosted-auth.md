@@ -50,6 +50,22 @@ namespace.
   a token presented with the wrong `resource` is rejected at issuance and
   again at resolution.
 
+## Consent
+
+Authorization requires consent, shown **once per (client, owner)** and
+remembered (`oauth_consents`):
+
+1. `/authorize` with an authenticated owner but no consent renders the
+   consent screen (client name + identity); the request parks in
+   `oauth_pending_authz` (one-time, 60s).
+2. `POST /authorize/approve` records consent, mints the code, redirects.
+   `POST /authorize/deny` redirects with `error=access_denied`.
+3. A pending request can only be resolved by the identity it was
+   authenticated as; foreign attempts consume it without approving.
+
+`KM_AUTO_CONSENT=1` skips the screen (dev/test only). No code is ever
+issued before consent.
+
 ## Device-authorization grant (RFC 8628)
 
 Headless boxes (threat-model principal) have no browser:
@@ -70,5 +86,6 @@ token issuance (the box's human may never visit `/authorize`).
 
 ## Not yet
 
-- Consent screen UI (v1 authorizes directly after owner authentication)
-- Per-identity rate budgets on `/mcp` itself
+- Per-harness emitters (Claude Code, Codex, …) — the generic commit-msg
+  hook installed by `kontext init` already covers every harness
+- Consent revocation UI (delete from `oauth_consents` revokes today)
