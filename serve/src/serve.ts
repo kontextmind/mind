@@ -24,6 +24,7 @@ import { runMigrations } from "../../server/src/migrate";
 import { MIGRATIONS } from "./migrations-generated";
 import { bootDemo, createFetch } from "../../server/src/app";
 import { loadConfig } from "../../server/src/config";
+import { embeddedAvailable, ensureEmbeddedPg } from "./embedded";
 
 export type DbSource = "env" | "docker" | "local-postgres" | "embedded";
 
@@ -169,12 +170,14 @@ export function pickDbSource(opts: {
 async function resolveDatabase(opts: {
   envUrl?: string | null;
   state: ServerState;
+  dataDir: string;
 }): Promise<DbResolution> {
   const localPgReachable = await probePg(LOCAL_PG_URL);
   const choice = pickDbSource({
     envUrl: opts.envUrl,
     docker: dockerAvailable(),
     localPgReachable,
+    embeddedAvailable: await embeddedAvailable(),
   });
   if (!choice) {
     throw new Error(
@@ -182,12 +185,18 @@ async function resolveDatabase(opts: {
         "No database available. Pick one:",
         "  1. Run Postgres 15+ and set DATABASE_URL (or use docker compose in the repo)",
         "  2. Install Docker — `kontextmind serve` manages its own container + volume",
-        `  3. Start a local Postgres matching ${LOCAL_PG_URL.replace(/:[^:@]+@/, ":***@")}`,
+        "  3. Install the embedded tier binaries (npm/bun install fetches them per platform)",
+        `  4. Start a local Postgres matching ${LOCAL_PG_URL.replace(/:[^:@]+@/, ":***@")}`,
       ].join("\n"),
     );
   }
   if (choice.source === "docker") {
     return { source: "docker", url: await ensureDockerPg(opts.state.db_password) };
+  }
+  if (choice.source === "embedded") {
+    // Real Postgres inside the data dir; no pgvector → FTS-only search.
+    const handle = await ensureEmbeddedPg(opts.dataDir, opts.state.db_password);
+    return { source: "embedded", url: handle.url };
   }
   return choice;
 }
@@ -211,7 +220,7 @@ export async function startServe(opts: StartServeOptions = {}): Promise<StartedS
   const mindStatus = ensureMindRepo(mindPath);
   const { state, created } = ensureServerJson(join(dataDir, "server.json"));
 
-  const db = await resolveDatabase({ envUrl: opts.databaseUrl ?? null, state });
+  const db = await resolveDatabase({ envUrl: opts.databaseUrl ?? null, state, dataDir });
 
   const admin = postgres(db.url, { max: 1, onnotice: () => {} });
   try {

@@ -36,6 +36,12 @@ export async function kmSearch(
     }
   }
   return withClaims(claims, async (tx) => {
+    // Schema without pgvector (embedded tier) → FTS-only, honestly.
+    if (qvec) {
+      const has = await tx`select 1 from information_schema.columns
+        where table_name = 'chunks' and column_name = 'embedding'`;
+      if (has.length === 0) qvec = null;
+    }
     // 1a/demo: freshness is tracked against the seeded mind repo (never
     // `limit 1` — multiple projects make that nondeterministic).
     const repo = await tx`select head_sha from repos where id = ${DEMO_REPO}`;

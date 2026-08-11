@@ -11,6 +11,9 @@ import { join } from "node:path";
 import postgres from "postgres";
 import { resolveDbUrl, type DisposableDb } from "../../tests/support/db";
 import { endDbPools } from "../../server/src/db";
+import { runMigrations } from "../../server/src/migrate";
+import { MIGRATIONS } from "../src/migrations-generated";
+import { embeddedAvailable, ensureEmbeddedPg } from "../src/embedded";
 import {
   defaultDataDir,
   ensureMindRepo,
@@ -220,4 +223,43 @@ describeMaybe("serve boot e2e (disposable db)", () => {
       s.close();
     }
   });
+});
+
+describeMaybe("embedded tier (real Postgres in the data dir)", () => {
+  test(
+    "boots without pgvector: migrations apply, search degrades to FTS honestly",
+    async () => {
+      if (process.env.KM_SKIP_EMBEDDED === "1") {
+        console.warn("KM_SKIP_EMBEDDED=1 — skipping embedded tier test");
+        return;
+      }
+      if (!(await embeddedAvailable())) {
+        console.warn("embedded binaries not installed on this platform — skipping");
+        return;
+      }
+      const dir = mkdtempSync(join(tmpdir(), "km-embedded-"));
+      const handle = await ensureEmbeddedPg(dir, "km-test-pw");
+      try {
+        const sql = postgres(handle.url, { max: 1, onnotice: () => {} });
+        try {
+          await runMigrations(sql, MIGRATIONS);
+          const migs = await sql`select count(*)::int as n from _migrations`;
+          expect(migs[0].n).toBeGreaterThanOrEqual(12);
+          // Embedded Postgres ships no pgvector → no embedding column.
+          const cols = await sql`select 1 from information_schema.columns
+            where table_name = 'chunks' and column_name = 'embedding'`;
+          expect(cols.length).toBe(0);
+          // FTS still works.
+          const fts = await sql`select to_tsvector('english', 'kontextmind memory') @@ to_tsquery('english', 'memory') as hit`;
+          expect(fts[0].hit).toBe(true);
+        } finally {
+          await sql.end({ timeout: 5 });
+        }
+      } finally {
+        await handle.stop();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    180000,
+  );
 });

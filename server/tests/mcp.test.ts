@@ -790,13 +790,28 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
   });
 
   test("CLI fast path: kontext search runs over /v1 end to end", async () => {
-    const { spawnSync } = await import("node:child_process");
-    const res = spawnSync(
+    // ASYNC spawn, never spawnSync: the child talks to THIS suite's
+    // in-process server — spawnSync would block the event loop and deadlock
+    // the exchange (child waits for a response the frozen parent can't send).
+    const { spawn } = await import("node:child_process");
+    const child = spawn(
       "bun",
       ["run", join(repoRoot, "cli", "src", "index.ts"), "search", "Supabase", "control", "plane"],
       { encoding: "utf8", env: { ...process.env, KM_URL: baseUrl, KM_TOKEN: "km-demo-local" } },
     );
-    expect(res.status).toBe(0);
-    expect(res.stdout).toContain("decisions/");
-  });
+    let stdout = "";
+    child.stdout.on("data", (d) => (stdout += String(d)));
+    const status = await new Promise<number | null>((resolve, reject) => {
+      const t = setTimeout(() => {
+        child.kill("SIGKILL");
+        reject(new Error("CLI child timed out"));
+      }, 30000);
+      child.on("close", (code) => {
+        clearTimeout(t);
+        resolve(code);
+      });
+    });
+    expect(status).toBe(0);
+    expect(stdout).toContain("decisions/");
+  }, 40000);
 });
