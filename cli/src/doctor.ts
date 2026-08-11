@@ -15,7 +15,7 @@ import { configDir } from "./login";
 
 export const RELEASES_URL =
   process.env.KM_RELEASES_URL ??
-  "https://api.github.com/repos/kontextmind/mind/releases/latest";
+  "https://api.github.com/repos/kontext-mind/mind/releases/latest";
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 3600 * 1000;
 
 export interface CheckItem {
@@ -40,7 +40,8 @@ export function updateNotice(current: string, latest: string): string | null {
   if (compareVersions(current, latest) >= 0) return null;
   return (
     `KontextMind ${latest} is out (you are on ${current}). ` +
-    `Update your checkout (git pull && bun install), then re-run \`kontext init\`.`
+    `Update with \`npm i -g @kontext-mind/cli\` (or git pull in your checkout), ` +
+    `then re-run \`kontext init\`.`
   );
 }
 
