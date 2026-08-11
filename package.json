@@ -11,8 +11,8 @@
     "dev": "bun run --cwd server src/index.ts",
     "test": "bun test",
     "test:isolation": "bun test tests/isolation",
-    "db:migrate": "bun run --cwd server src/migrate.ts",
+    "db:migrate": "bun run --cwd server src/migrate-cli.ts",
     "seed": "bun run scripts/seed-mind.ts",
-    "install:all": "cd server && bun install && cd ../cli && bun install"
+    "install:all": "cd server && bun install && cd ../cli && bun install && cd ../serve && bun install"
   }
 }

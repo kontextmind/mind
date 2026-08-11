@@ -19,6 +19,16 @@ and an OAuth login.
 
 ## Quickstart
 
+**Zero install** (Node ≥ 18.17, one persistent data directory):
+
+```bash
+npx kontextmind serve        # boots on http://127.0.0.1:13013/mcp
+                             # data: ~/.kontextmind (mind git repo + server.json)
+                             # db: DATABASE_URL → docker container → local Postgres
+```
+
+**From source:**
+
 ```bash
 git clone https://github.com/kontextmind/mind.git && cd mind
 bun install --no-save            # Windows bun lockfile bug: --no-save
@@ -66,6 +76,7 @@ another instance.
 |---|---|
 | `server/` | KontextMind server (MCP endpoint, indexer, OAuth AS, webhook join, WI detectors) |
 | `cli/` | `kontext` CLI — published as [`@kontextmind/cli`](https://www.npmjs.com/package/@kontextmind/cli) |
+| `serve/` | `kontextmind` server package — `npx kontextmind serve`, zero-install with one persistent data dir |
 | `skills/` | Agent Skills (open standard, docs-only): query / harvest / triage / status |
 | `migrations/` | Postgres schema + RLS policies (numbered, idempotent) |
 | `deploy/` | docker-compose dev stack; Dockerfile for hosted |
