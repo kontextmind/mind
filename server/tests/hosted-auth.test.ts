@@ -113,7 +113,11 @@ describeMaybe("hosted auth (OAuth 2.1)", () => {
     const as = await (await req("/.well-known/oauth-authorization-server")).json();
     expect(as.issuer).toBe(ISSUER);
     expect(as.code_challenge_methods_supported).toEqual(["S256"]);
-    expect(as.grant_types_supported).toEqual(["authorization_code", "refresh_token"]);
+    expect(as.grant_types_supported).toEqual([
+      "authorization_code",
+      "refresh_token",
+      "urn:ietf:params:oauth:grant-type:device_code",
+    ]);
     expect(as.registration_endpoint).toBe(`${ISSUER}/register`);
   });
 

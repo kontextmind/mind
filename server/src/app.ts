@@ -15,6 +15,7 @@ import {
   token,
 } from "./auth-server";
 import { githubCallback, startGitHubLogin } from "./owner-auth";
+import { deviceApprove, deviceAuthorization, deviceDeny, devicePage } from "./device-grant";
 import { ingestRepo } from "./indexer/ingest";
 import { headSha, isRepo } from "./indexer/git";
 
@@ -102,6 +103,18 @@ export function createFetch(cfg: Config): (req: Request) => Response | Promise<R
       }
       if (url.pathname === "/auth/github/callback" && req.method === "GET") {
         return githubCallback(cfg, req);
+      }
+      if (url.pathname === "/device_authorization" && req.method === "POST") {
+        return deviceAuthorization(cfg, req);
+      }
+      if (url.pathname === "/device" && req.method === "GET") {
+        return devicePage(cfg, req);
+      }
+      if (url.pathname === "/device/approve" && req.method === "POST") {
+        return deviceApprove(cfg, req);
+      }
+      if (url.pathname === "/device/deny" && req.method === "POST") {
+        return deviceDeny(cfg, req);
       }
     } else if (url.pathname.startsWith("/.well-known/")) {
       return Response.json(
