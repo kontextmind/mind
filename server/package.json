@@ -1,5 +1,5 @@
 {
-  "name": "@kontext-mind/server",
+  "name": "@kontextmind/server",
   "version": "0.0.0",
   "private": true,
   "type": "module",

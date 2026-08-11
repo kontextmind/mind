@@ -14,13 +14,13 @@ and an OAuth login.
   (`KM-Session` commit trailers joined server-side from webhooks), detects loop
   patterns and knowledge gaps, and recommends improvements with proof.
 
-> Status: **v0.1.0, public** — see [releases](https://github.com/kontext-mind/mind/releases)
+> Status: **v0.1.0, public** — see [releases](https://github.com/kontextmind/mind/releases)
 > and the contracts in `docs/`.
 
 ## Quickstart
 
 ```bash
-git clone https://github.com/kontext-mind/mind.git && cd mind
+git clone https://github.com/kontextmind/mind.git && cd mind
 bun install --no-save            # Windows bun lockfile bug: --no-save
 cd server && bun install --no-save && cd ..
 bun run seed                     # synthesizes demo/mind with dated git history

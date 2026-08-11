@@ -1,6 +1,6 @@
 # @kontextmind/cli
 
-The CLI for [KontextMind](https://github.com/kontext-mind/mind) — the
+The CLI for [KontextMind](https://github.com/kontextmind/mind) — the
 persistent mind behind every AI agent: memory + work context + workflow
 intelligence, git-canonical and self-hostable.
 
