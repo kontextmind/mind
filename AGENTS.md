@@ -14,8 +14,10 @@ Read `README.md`, then the contracts in `docs/` before non-trivial changes.
    (`docs/session-spine.md`) and `km_*` tool schemas (`docs/protocol.md`) are
    versioned protocol surface. Breaking changes require a version bump + migration
    note, never silent drift.
-2. **Isolation harness gates every merge.** `tests/isolation/` must pass in CI;
-   any change touching RLS, claims, or query paths needs a deny-test.
+2. **Isolation harness gates every merge.** Branch protection on `main`
+   requires the CI `test` check (full suite + `tests/isolation/` deny harness)
+   with an up-to-date branch, enforced for admins too — no bypass. Any change
+   touching RLS, claims, or query paths needs a deny-test.
 3. **Secret gates are deterministic.** Never rely on LLM redaction alone; the
    server-side scan gate (`docs/secret-gates.md`) blocks commits.
 4. **No vanity metrics.** Every dashboard panel answers "what decision does this
