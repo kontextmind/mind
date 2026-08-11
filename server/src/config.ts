@@ -24,6 +24,9 @@ export interface Config {
   /** Owner-auth implementation: allowlist or GitHub OAuth (decision 0001). */
   ownerAuth: "allowlist" | "github";
   github: GitHubOAuthConfig | null;
+  /** GitHub API base for read-throughs (GHE/test injectable), token optional. */
+  githubApi: string;
+  githubApiToken: string | null;
   /** Requests/minute per IP for the auth endpoints (B1 rate limiting). */
   authRateLimit: number;
 }
@@ -58,6 +61,8 @@ export function loadConfig(): Config {
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean),
     ownerAuth,
+    githubApi: process.env.KM_GITHUB_API ?? "https://api.github.com",
+    githubApiToken: process.env.KM_GITHUB_API_TOKEN ?? null,
     github:
       ownerAuth === "github"
         ? {

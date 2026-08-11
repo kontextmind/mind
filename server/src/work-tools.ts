@@ -15,6 +15,8 @@ import { randomUUID } from "node:crypto";
 import type { JSONValue } from "postgres";
 import { withClaims, type KmClaims } from "./db";
 import { scanContent } from "./secrets";
+import { trackerReadthrough, type TrackerReadthrough } from "./trackers";
+import type { Config } from "./config";
 
 export const TASK_REF_MAX = 512;
 export const NOTE_MAX = 8000;
@@ -105,8 +107,10 @@ export async function kmWorkUpdate(
 export async function kmWorkCurrent(
   claims: KmClaims,
   args: { namespace?: string },
+  cfg: Config,
 ): Promise<Record<string, unknown>> {
   const ns: string | null = args.namespace ?? null;
+  const trackers: TrackerReadthrough = await trackerReadthrough(cfg, claims);
   return withClaims(claims, async (tx) => {
     // Latest checkpoint per task_ref (never `limit 1` globally — multiple
     // tasks run concurrently; RLS already scopes to the caller's namespaces).
@@ -127,9 +131,10 @@ export async function kmWorkCurrent(
       order by created_at desc
       limit 10`;
     return {
-      // Honesty contract: no tracker integration exists yet, so say so.
-      // Faking Linear/GitHub state would violate evidence-over-self-report.
-      trackers: { connected: false, note: "Linear/GitHub read-through lands with hosted mode" },
+      // Read-through is honest: without a token it says connected:false,
+      // with one it serves cached tracker issues (trackers.ts). KontextMind
+      // is never the tracker itself.
+      trackers,
       checkpoints: cps.map((r) => ({
         id: r.id as string,
         task_ref: (r.task_ref as string | null) ?? null,

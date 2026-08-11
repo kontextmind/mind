@@ -40,6 +40,8 @@ describeMaybe("hosted auth (OAuth 2.1)", () => {
     bootstrapEmails: [EMAIL],
     ownerAuth: "allowlist",
     github: null,
+    githubApi: "https://api.github.com",
+    githubApiToken: null,
     authRateLimit: 10000,
     ...over,
   });
