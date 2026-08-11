@@ -15,7 +15,7 @@ import { configDir } from "./login";
 
 export const RELEASES_URL =
   process.env.KM_RELEASES_URL ??
-  "https://api.github.com/repos/kontext-mind/mind/releases/latest";
+  "https://api.github.com/repos/kontextmind/mind/releases/latest";
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 3600 * 1000;
 
 export interface CheckItem {

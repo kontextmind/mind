@@ -7,8 +7,8 @@
   "bin": { "kontext": "dist/index.mjs" },
   "files": ["dist", "README.md"],
   "engines": { "node": ">=18.17" },
-  "repository": { "type": "git", "url": "git+https://github.com/kontext-mind/mind.git" },
-  "homepage": "https://github.com/kontext-mind/mind",
+  "repository": { "type": "git", "url": "git+https://github.com/kontextmind/mind.git" },
+  "homepage": "https://github.com/kontextmind/mind",
   "keywords": ["kontextmind", "ai-agents", "mcp", "memory", "cli", "git"],
   "scripts": {
     "build": "bun run build.mjs",
