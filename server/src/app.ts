@@ -2,7 +2,7 @@
  * App factory — separated from index.ts so tests can boot the server
  * in-process against a disposable database.
  */
-import { DEMO_NAMESPACE, DEMO_ORG, DEMO_REPO, type Config } from "./config";
+import { DEMO_NAMESPACE, DEMO_ORG, DEMO_REPO, SERVER_VERSION, type Config } from "./config";
 import { adminDb, hasDb } from "./db";
 import { authenticate } from "./auth";
 import { handleMcp } from "./mcp";
@@ -70,7 +70,7 @@ export function createFetch(cfg: Config): (req: Request) => Response | Promise<R
       return Response.json({
         ok: true,
         service: "kontextmind",
-        version: "0.1.0",
+        version: SERVER_VERSION,
         mode: cfg.mode,
         database: hasDb() ? "configured" : "absent (degraded: healthz only)",
       });

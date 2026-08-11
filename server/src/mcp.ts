@@ -7,6 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import type { Config } from "./config";
+import { SERVER_VERSION } from "./config";
 import { withClaims, type KmClaims } from "./db";
 import { newSessionId } from "./session";
 import * as tools from "./tools";
@@ -71,7 +72,7 @@ export async function recordBeacon(
 }
 
 function buildServer(ctx: McpContext): McpServer {
-  const server = new McpServer({ name: "kontextmind", version: "0.1.0" });
+  const server = new McpServer({ name: "kontextmind", version: SERVER_VERSION });
 
   server.registerTool(
     "km_search",

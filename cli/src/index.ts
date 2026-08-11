@@ -9,7 +9,10 @@
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { initProject, writeSessionFile } from "./init";
+import { readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { initProject, writeSessionFile, CLI_VERSION } from "./init";
+import { doctor, latestRelease, renderReport, serverVersion, updateNotice } from "./doctor";
 import { getAuth, login } from "./login";
 
 const url = process.env.KM_URL ?? "http://127.0.0.1:3000/mcp";
@@ -21,7 +24,7 @@ async function withClient<T>(fn: (c: Client) => Promise<T>): Promise<T> {
   const transport = new StreamableHTTPClientTransport(new URL(url), {
     requestInit: { headers: { Authorization: `Bearer ${token}` } },
   });
-  const client = new Client({ name: "kontext-cli", version: "0.1.0" });
+  const client = new Client({ name: "kontext-cli", version: CLI_VERSION });
   await client.connect(transport);
   try {
     return await fn(client);
@@ -88,6 +91,30 @@ async function main() {
           /* status output that is not JSON still prints above */
         }
       });
+      return;
+    }
+    case "version": {
+      console.log(`kontext ${CLI_VERSION}`);
+      const latest = await latestRelease(CLI_VERSION);
+      const notice = latest ? updateNotice(CLI_VERSION, latest) : null;
+      if (notice) console.error(notice);
+      return;
+    }
+    case "doctor": {
+      // usage: kontext doctor [--dir D] — installation health + update notice
+      const target = argAfter("--dir") ?? process.cwd();
+      const manifest = readManifestSafe(join(target, ".kontextmind", "kontext.json"));
+      const serverUrl = argAfter("--url") ?? manifest?.url ?? url;
+      const sv = await serverVersion(serverUrl);
+      const report = doctor(target, {
+        cliVersion: CLI_VERSION,
+        serverVersion: sv,
+        sessionActive: isFile(join(target, ".kontextmind", "session")),
+      });
+      const latest = await latestRelease(CLI_VERSION);
+      const notice = latest ? updateNotice(CLI_VERSION, latest) : null;
+      console.log(renderReport(report, notice));
+      if (report.broken) process.exitCode = 1;
       return;
     }
     case "login": {
@@ -171,6 +198,8 @@ async function main() {
 
 usage:
   kontext login [--url U]                   OAuth login (device code — approve in browser)
+  kontext doctor [--dir D]                  verify the installation + check for updates
+  kontext version                           CLI version + release notice
   kontext init [--url U] [--token T] [--dir D]  connect this project (MCP config +
                                                 commit-msg trailer hook + AGENTS.md)
   kontext search <query>                    search the mind (provenance + staleness per hit)
@@ -189,6 +218,22 @@ env:
 function argAfter(flag: string): string | undefined {
   const i = rest.indexOf(flag);
   return i >= 0 ? rest[i + 1] : undefined;
+}
+
+function readManifestSafe(p: string): { url?: string } | null {
+  try {
+    return JSON.parse(readFileSync(p, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function isFile(p: string): boolean {
+  try {
+    return statSync(p).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function fail(msg: string): never {
