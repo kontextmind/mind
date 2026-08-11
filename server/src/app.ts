@@ -7,6 +7,7 @@ import { adminDb, hasDb } from "./db";
 import { authenticate } from "./auth";
 import { handleMcp } from "./mcp";
 import { handleGitHubWebhook } from "./webhook";
+import { budgetFor, principalLimited } from "./budgets";
 import {
   authorizationServerMetadata,
   authorize,
@@ -133,6 +134,14 @@ export function createFetch(cfg: Config): (req: Request) => Response | Promise<R
       const authn = await authenticate(cfg, req);
       if (!authn.ok) {
         return Response.json(authn.body, { status: authn.status, headers: authn.headers });
+      }
+      // Per-identity budget (protocol.md): after auth, one noisy principal
+      // cannot starve the org's other identities.
+      if (principalLimited(authn.claims.sub, budgetFor(cfg))) {
+        return Response.json(
+          { error: "rate_limited", detail: "per-identity MCP budget exceeded" },
+          { status: 429, headers: { "Retry-After": "60" } },
+        );
       }
       return handleMcp(req, { cfg, claims: authn.claims, headSha: currentHead });
     }
