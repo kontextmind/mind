@@ -22,6 +22,10 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 
+export const CLI_VERSION: string = (
+  JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")) as { version: string }
+).version;
+
 export const HOOK_MARKER = "# kontextmind:trailer-hook v1";
 export const AGENTS_BEGIN = "<!-- kontextmind:begin -->";
 export const AGENTS_END = "<!-- kontextmind:end -->";
@@ -148,7 +152,11 @@ function writeManifest(dir: string, url: string): InitReport["manifest"] {
   const existed = existsSync(path);
   writeFileSync(
     path,
-    `${JSON.stringify({ url, installed_at: new Date().toISOString(), hook: "commit-msg" }, null, 2)}\n`,
+    `${JSON.stringify(
+      { url, cli_version: CLI_VERSION, installed_at: new Date().toISOString(), hook: "commit-msg" },
+      null,
+      2,
+    )}\n`,
   );
   return existed ? "updated" : "created";
 }

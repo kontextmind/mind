@@ -1,4 +1,12 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 export type KmMode = "demo" | "hosted";
+
+/** Single source of truth: server/package.json (never hardcode versions). */
+export const SERVER_VERSION: string = (
+  JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")) as { version: string }
+).version;
 
 export interface GitHubOAuthConfig {
   clientId: string;
