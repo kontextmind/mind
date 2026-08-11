@@ -54,6 +54,7 @@ isolation = run another instance.
 docker compose up   # server + pgvector Postgres, seeded demo mind (phase 1a)
 npx kontext login   # hosted mode: OAuth login via device code (approve in browser)
 npx kontext init    # connect a project: MCP config + commit-msg trailer hook + AGENTS.md contract
+npx kontext doctor  # verify an installation + check for new releases (KM_NO_UPDATE_CHECK=1 opts out)
 ```
 
 ## Repository layout
