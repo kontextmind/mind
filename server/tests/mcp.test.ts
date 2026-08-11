@@ -607,7 +607,7 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
     const c = await connect();
     const res = await c.callTool({
       name: "km_work_update",
-      arguments: { task_ref: "LIN-43", note: "use token ghp_aB3dEfGhIjKlMnOpQrStUvWxYz0123456789 for ci" },
+      arguments: { task_ref: "LIN-43", note: "use token ghp_0000000000000000000000000000000FAKE0 for ci" },
     });
     expect(res.isError).toBe(true);
     expect(parse(res).error).toContain("secret_gate");

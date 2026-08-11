@@ -153,6 +153,18 @@ describe("release check — throttled, silent, opt-out", () => {
     expect(calls).toBe(2);
   });
 
+  test("private repos: GITHUB_TOKEN is sent when set", async () => {
+    process.env.GITHUB_TOKEN = "gh_test_token";
+    const seen: { auth: string | null } = { auth: null };
+    const fake = (async (_url: string | URL | Request, init?: RequestInit) => {
+      seen.auth = new Headers(init?.headers).get("authorization");
+      return new Response(JSON.stringify({ tag_name: "v0.1.0" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await latestRelease("0.1.0", Date.now(), fake);
+    expect(seen.auth).toBe("Bearer gh_test_token");
+    delete process.env.GITHUB_TOKEN;
+  });
+
   test("KM_NO_UPDATE_CHECK=1 disables the check entirely", async () => {
     process.env.KM_NO_UPDATE_CHECK = "1";
     let calls = 0;
