@@ -4,10 +4,17 @@
   "description": "kontext — connect any project to KontextMind, the persistent mind behind every AI agent",
   "license": "Apache-2.0",
   "type": "module",
-  "bin": { "kontext": "dist/index.mjs" },
+  "bin": {
+    "kontext": "dist/index.mjs"
+  },
   "files": ["dist", "README.md"],
-  "engines": { "node": ">=18.17" },
-  "repository": { "type": "git", "url": "git+https://github.com/kontextmind/mind.git" },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kontextmind/mind.git"
+  },
   "homepage": "https://github.com/kontextmind/mind",
   "keywords": ["kontextmind", "ai-agents", "mcp", "memory", "cli", "git"],
   "scripts": {
@@ -16,7 +23,7 @@
     "prepublishOnly": "bun run build"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.0"
+    "commander": "^15.0.0"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",

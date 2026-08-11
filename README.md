@@ -61,6 +61,16 @@ kontext doctor  # verify the installation + check for new releases
 lands. The commit-msg hook attaches the `KM-Session` evidence trailer to every
 commit made in an active session; agents can omit trailers but never fake them.
 
+## CLI-first
+
+The CLI (`@kontextmind/cli`, Commander-based) covers the **entire** tool
+surface — search/read/list/graph/chat/status, append/review, projects, reindex,
+invites, insights, work checkpoints, handoffs. It speaks the native `/v1/call`
+transport: one authenticated round-trip, no protocol handshake — that's the
+speed. **MCP is fully supported and wraps the exact same dispatch** — one
+source of truth, two doors. Rule of thumb: shell-capable agents and humans
+use the CLI; MCP-only agents use MCP.
+
 ## One unit, no lock-in
 
 KontextMind is one self-contained deployable: a Bun/TS server + one Postgres

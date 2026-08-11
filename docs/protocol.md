@@ -5,8 +5,17 @@ Status: **v0.1 (pre-freeze — shapes stabilize during phase 1a, then freeze as 
 The MCP tool surface. This document is the protocol spec: other tools may implement
 or consume these shapes without running the KontextMind server.
 
-Transport: MCP Streamable HTTP. Auth: OAuth 2.1 per the MCP authorization spec
-(protected-resource metadata, DCR, PKCE, RFC 8707 audience binding).
+Transports — one dispatch (`tool-dispatch`), two doors:
+
+- **MCP Streamable HTTP** (`/mcp`) — the agent integration surface. Auth:
+  OAuth 2.1 per the MCP authorization spec (protected-resource metadata,
+  DCR, PKCE, RFC 8707 audience binding).
+- **Native HTTP** (`POST /v1/call`, body `{tool, args}`) — the CLI's fast
+  path: one authenticated round-trip, no handshake. Same tools, same args,
+  same responses; bearer auth + per-identity budgets identical to /mcp.
+  Response: `{ok, result}`; tool-level errors ride in `result.error`.
+
+Board stance: the CLI does everything; the MCP server wraps the same dispatch.
 
 ## Tools
 

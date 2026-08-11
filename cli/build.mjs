@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Build the publishable CLI: one node-compatible bundle (MCP SDK external —
+ * Build the publishable CLI: one node-compatible bundle (commander external —
  * npm installs it), shebang re-attached, source shebang stripped.
  */
 import { spawnSync } from "node:child_process";
@@ -13,7 +13,7 @@ mkdirSync(join(here, "dist"), { recursive: true });
 
 const res = spawnSync(
   "bun",
-  ["build", "src/index.ts", "--target=node", "--outdir", "dist", "--external", "@modelcontextprotocol/sdk"],
+  ["build", "src/index.ts", "--target=node", "--outdir", "dist", "--external", "commander"],
   { cwd: here, encoding: "utf8" },
 );
 if (res.status !== 0) {
