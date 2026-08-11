@@ -16,6 +16,7 @@ import { kmInvite, kmProjectAdd, kmProjects, kmReindex } from "./admin-tools";
 import { kmInsights } from "./insights";
 import { argsHash, recordEvent, runEventDetectors } from "./events";
 import { kmHandoffLoad, kmHandoffSave, kmWorkCurrent, kmWorkUpdate } from "./work-tools";
+import { trackerReadthrough } from "./trackers";
 
 export interface McpContext {
   cfg: Config;
@@ -367,7 +368,7 @@ function buildServer(ctx: McpContext): McpServer {
       inputSchema: { namespace: z.string().optional() },
     },
     async (args) => {
-      const res = await kmWorkCurrent(ctx.claims, args);
+      const res = await kmWorkCurrent(ctx.claims, args, ctx.cfg);
       return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
     },
   );

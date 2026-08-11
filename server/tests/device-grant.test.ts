@@ -34,6 +34,8 @@ describeMaybe("device-authorization grant (RFC 8628)", () => {
     bootstrapEmails: [OWNER],
     ownerAuth: "allowlist",
     github: null,
+    githubApi: "https://api.github.com",
+    githubApiToken: null,
     authRateLimit: 10000,
   });
 

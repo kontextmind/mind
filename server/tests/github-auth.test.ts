@@ -44,6 +44,8 @@ describeMaybe("owner seam: GitHub OAuth", () => {
     bootstrapEmails: [],
     ownerAuth: "github",
     github: { clientId: "cid-test", clientSecret: "sec-test", base: ghBase, api: ghBase },
+    githubApi: ghBase,
+    githubApiToken: null,
     authRateLimit: 10000,
   });
 
