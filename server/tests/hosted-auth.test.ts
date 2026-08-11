@@ -38,6 +38,8 @@ describeMaybe("hosted auth (OAuth 2.1)", () => {
     githubWebhookSecret: null,
     publicUrl: ISSUER,
     bootstrapEmails: [EMAIL],
+    ownerAuth: "allowlist",
+    github: null,
     authRateLimit: 10000,
     ...over,
   });

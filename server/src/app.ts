@@ -14,6 +14,7 @@ import {
   registerClient,
   token,
 } from "./auth-server";
+import { githubCallback, startGitHubLogin } from "./owner-auth";
 import { ingestRepo } from "./indexer/ingest";
 import { headSha, isRepo } from "./indexer/git";
 
@@ -95,6 +96,12 @@ export function createFetch(cfg: Config): (req: Request) => Response | Promise<R
       }
       if (url.pathname === "/token" && req.method === "POST") {
         return token(req, cfg);
+      }
+      if (url.pathname === "/auth/github/start" && req.method === "GET") {
+        return startGitHubLogin(cfg, req);
+      }
+      if (url.pathname === "/auth/github/callback" && req.method === "GET") {
+        return githubCallback(cfg, req);
       }
     } else if (url.pathname.startsWith("/.well-known/")) {
       return Response.json(

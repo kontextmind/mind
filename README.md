@@ -14,10 +14,10 @@ and an OAuth login.
   (`KM-Session` commit trailers), detects loop patterns, drift, and knowledge gaps,
   and recommends improvements with proof on a dashboard.
 
-> Status: **phase 1g** — read/write paths, review queue, secret gates,
+> Status: **phase 1i** — read/write paths, review queue, secret gates,
 > evidence-spine webhook join, WI insights, work context, event stream,
-> hosted-mode OAuth 2.1 (PKCE + DCR + audience binding; GitHub upstream is
-> the remaining seam). See `docs/` for the contracts and the plan of record.
+> hosted-mode OAuth 2.1 (PKCE + DCR + audience binding) with the GitHub
+> owner seam live. See `docs/` for the contracts and the plan of record.
 
 ## Quickstart (demo)
 
@@ -44,9 +44,11 @@ mind flag its own stale page with the superseding decision.
 ## One unit, no lock-in
 
 KontextMind is one self-contained deployable: a Bun/TS server + one Postgres
-(pgvector, FTS, RLS). Auth lives in-process (Better Auth: GitHub OAuth, OAuth 2.1
-provider for MCP with dynamic client registration, agent identities). Run it on any
-Postgres 15+ — hosted or in your own VPC. Hard tenant isolation = run another instance.
+(pgvector, FTS, RLS). Auth lives in-process (owner identity via GitHub OAuth
+or an operator allowlist behind one seam — docs/decisions/0001; OAuth 2.1
+provider for MCP with dynamic client registration; agent identities later).
+Run it on any Postgres 15+ — hosted or in your own VPC. Hard tenant
+isolation = run another instance.
 
 ```bash
 docker compose up   # server + pgvector Postgres, seeded demo mind (phase 1a)

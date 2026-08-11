@@ -20,10 +20,20 @@ All auth endpoints are rate-limited per IP (`KM_AUTH_RATE_LIMIT`, default
 
 ## Owner authentication seam
 
-`authenticateOwner()` is the single swap point. **v1:** operator-controlled
-allowlist (`KM_HOSTED_BOOTSTRAP_EMAILS`). **Production:** GitHub OAuth
-session via Better Auth (README decision). Everything downstream of the seam
-— codes, tokens, claims — is final and does not change with the IdP.
+`resolveOwner()` is the single swap point — see
+[decision 0001](decisions/0001-native-github-oauth.md) for the Better Auth
+deferral. Two implementations ship:
+
+- **allowlist** (`KM_OWNER_AUTH=allowlist`, default without GitHub creds):
+  operator-controlled `KM_HOSTED_BOOTSTRAP_EMAILS`. Demo/dev.
+- **github** (auto-selected when `KM_GITHUB_CLIENT_ID` is set): standard
+  OAuth web flow — `/authorize` without an owner session redirects to
+  `/auth/github/start` → GitHub (CSRF state, 10m TTL, single-use) →
+  `/auth/github/callback` exchanges the code and accepts **verified emails
+  only** → 8h owner-session cookie (sha256 at rest). GitHub Enterprise /
+  test endpoints injectable via `KM_GITHUB_BASE` / `KM_GITHUB_API`.
+
+Everything downstream of the seam — codes, tokens, claims — is final.
 
 First login bootstraps the tenant: user + org (owner membership) + `default`
 namespace.
@@ -43,6 +53,5 @@ namespace.
 ## Not yet
 
 - Consent screen UI (v1 authorizes directly after owner authentication)
-- GitHub OAuth upstream (the seam above)
 - Device-authorization grant for headless boxes (threat-model principals)
 - Per-identity rate budgets on `/mcp` itself

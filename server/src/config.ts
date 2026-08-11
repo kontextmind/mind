@@ -1,5 +1,14 @@
 export type KmMode = "demo" | "hosted";
 
+export interface GitHubOAuthConfig {
+  clientId: string;
+  clientSecret: string;
+  /** Authorization host (GitHub Enterprise / test mock injectable). */
+  base: string;
+  /** API host (GitHub Enterprise / test mock injectable). */
+  api: string;
+}
+
 export interface Config {
   mode: KmMode;
   port: number;
@@ -12,6 +21,9 @@ export interface Config {
   publicUrl: string | null;
   /** Hosted-mode owner-auth seam: comma-separated allowlist of emails. */
   bootstrapEmails: string[];
+  /** Owner-auth implementation: allowlist or GitHub OAuth (decision 0001). */
+  ownerAuth: "allowlist" | "github";
+  github: GitHubOAuthConfig | null;
   /** Requests/minute per IP for the auth endpoints (B1 rate limiting). */
   authRateLimit: number;
 }
@@ -20,6 +32,17 @@ export function loadConfig(): Config {
   const mode = (process.env.KM_MODE ?? "demo") as KmMode;
   if (mode !== "demo" && mode !== "hosted") {
     throw new Error(`KM_MODE must be demo|hosted, got: ${mode}`);
+  }
+  const githubClientId = process.env.KM_GITHUB_CLIENT_ID ?? "";
+  const ownerAuthEnv = process.env.KM_OWNER_AUTH ?? "";
+  const ownerAuth: Config["ownerAuth"] =
+    ownerAuthEnv === "github" || ownerAuthEnv === "allowlist"
+      ? ownerAuthEnv
+      : githubClientId
+        ? "github" // presence of credentials selects the production seam
+        : "allowlist";
+  if (ownerAuth === "github" && !githubClientId) {
+    throw new Error("KM_OWNER_AUTH=github requires KM_GITHUB_CLIENT_ID");
   }
   return {
     mode,
@@ -34,6 +57,16 @@ export function loadConfig(): Config {
       .split(",")
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean),
+    ownerAuth,
+    github:
+      ownerAuth === "github"
+        ? {
+            clientId: githubClientId,
+            clientSecret: process.env.KM_GITHUB_CLIENT_SECRET ?? "",
+            base: process.env.KM_GITHUB_BASE ?? "https://github.com",
+            api: process.env.KM_GITHUB_API ?? "https://api.github.com",
+          }
+        : null,
     authRateLimit: Number(process.env.KM_AUTH_RATE_LIMIT ?? 120),
   };
 }
