@@ -52,6 +52,7 @@ isolation = run another instance.
 
 ```bash
 docker compose up   # server + pgvector Postgres, seeded demo mind (phase 1a)
+npx kontext login   # hosted mode: OAuth login via device code (approve in browser)
 npx kontext init    # connect a project: MCP config + commit-msg trailer hook + AGENTS.md contract
 ```
 

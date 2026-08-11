@@ -10,11 +10,14 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { initProject, writeSessionFile } from "./init";
+import { getAuth, login } from "./login";
 
 const url = process.env.KM_URL ?? "http://127.0.0.1:3000/mcp";
-const token = process.env.KM_TOKEN ?? "km-demo-local";
 
 async function withClient<T>(fn: (c: Client) => Promise<T>): Promise<T> {
+  // Precedence: KM_TOKEN env > stored OAuth tokens (auto-refreshed) > demo
+  // default. `kontext login` populates the store via the device grant.
+  const token = (await getAuth(url)) ?? process.env.KM_TOKEN ?? "km-demo-local";
   const transport = new StreamableHTTPClientTransport(new URL(url), {
     requestInit: { headers: { Authorization: `Bearer ${token}` } },
   });
@@ -87,6 +90,15 @@ async function main() {
       });
       return;
     }
+    case "login": {
+      // usage: kontext login [--url U] — device-grant OAuth (RFC 8628)
+      try {
+        await login(argAfter("--url") ?? url);
+      } catch (err) {
+        return fail(`kontext login: ${(err as Error).message}`);
+      }
+      return;
+    }
     case "init": {
       // usage: kontext init [--url U] [--token T] [--dir D]
       const target = argAfter("--dir") ?? process.cwd();
@@ -94,7 +106,7 @@ async function main() {
         const report = initProject({
           projectDir: target,
           url: argAfter("--url") ?? url,
-          token: argAfter("--token") ?? token,
+          token: argAfter("--token") ?? process.env.KM_TOKEN ?? "km-demo-local",
         });
         console.log(`kontext init — ${target}`);
         console.log(`  .mcp.json         ${report.mcp}`);
@@ -158,6 +170,7 @@ async function main() {
       console.log(`kontext — KontextMind
 
 usage:
+  kontext login [--url U]                   OAuth login (device code — approve in browser)
   kontext init [--url U] [--token T] [--dir D]  connect this project (MCP config +
                                                 commit-msg trailer hook + AGENTS.md)
   kontext search <query>                    search the mind (provenance + staleness per hit)
