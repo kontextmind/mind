@@ -80,7 +80,11 @@ console.log(`releasing v${next} (from v${current})${dry ? " — DRY RUN" : ""}\n
 // 1. Lockstep version bump across every package.
 for (const t of targets) {
   const p = join(t.dir, "package.json");
-  const j = JSON.parse(readFileSync(p, "utf8"));
+  const j = JSON.parse(readFileSync(p, "utf8")) as { version: string };
+  if (dry) {
+    console.log(`[dry] bump ${t.name} ${j.version} → ${next}`);
+    continue;
+  }
   j.version = next;
   writeFileSync(p, `${JSON.stringify(j, null, 2)}\n`);
   console.log(`bumped ${t.name} → ${next}`);
