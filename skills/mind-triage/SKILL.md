@@ -1,5 +1,5 @@
 ---
-name: kontextmind-triage
+name: mind-triage
 description: Work the KontextMind review queue — promote harvested learnings, resolve drift/contradiction/gap items, dismiss noise with reasons. Use when asked to triage the mind, review the queue, or promote learnings.
 license: Apache-2.0
 metadata:
@@ -9,7 +9,7 @@ metadata:
 # KontextMind Triage
 
 On load, include skill context in the first `km_status` call (beacon handshake):
-`km_status` with `skill: "kontextmind-triage"`.
+`km_status` with `skill: "mind-triage"`.
 
 ## Workflow
 

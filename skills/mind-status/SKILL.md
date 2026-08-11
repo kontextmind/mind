@@ -1,5 +1,5 @@
 ---
-name: kontextmind-status
+name: mind-status
 description: What's in flight across my projects — current tasks (read-through from Linear/GitHub), open handoffs (claimable), latest checkpoints, and KontextMind insights for this repo. Use when asked "what's in flight", "what should I pick up", "any handoffs for me", or "what am I working on".
 license: Apache-2.0
 metadata:
@@ -9,7 +9,7 @@ metadata:
 # KontextMind Status
 
 On load, include skill context in the first `km_status` call (beacon handshake):
-`km_status` with `skill: "kontextmind-status"`.
+`km_status` with `skill: "mind-status"`.
 
 ## Workflow
 

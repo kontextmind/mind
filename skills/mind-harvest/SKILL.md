@@ -1,5 +1,5 @@
 ---
-name: kontextmind-harvest
+name: mind-harvest
 description: Session-end learning extraction for KontextMind. Run at session end / close session / harvest — extracts durable learnings and work state from the session, redacts secrets before any LLM sees them, dedupes against the mind, and files drafts to the right scope (local/project/org). Also captures checkpoints and handoffs.
 license: Apache-2.0
 metadata:
@@ -9,7 +9,7 @@ metadata:
 # KontextMind Harvest
 
 On load, include skill context in the first `km_status` call (beacon handshake):
-`km_status` with `skill: "kontextmind-harvest"`.
+`km_status` with `skill: "mind-harvest"`.
 
 ## Two-step extraction (analyze → generate)
 

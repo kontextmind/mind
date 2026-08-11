@@ -1,5 +1,5 @@
 ---
-name: kontextmind-query
+name: mind-query
 description: Query the team's KontextMind — shared memory, decisions, learnings, and process knowledge for this project and org. Use when asked "what do we know about X", "what did we decide about X", "how do we test/release/debug", or when KontextMind, the mind, or km_ tools are mentioned explicitly. Does NOT trigger on generic note/wiki searches unrelated to KontextMind.
 license: Apache-2.0
 metadata:
@@ -9,7 +9,7 @@ metadata:
 # KontextMind Query
 
 On load, include skill context in the first `km_status` call (beacon handshake):
-`km_status` with `skill: "kontextmind-query"`.
+`km_status` with `skill: "mind-query"`.
 
 ## How to query
 
