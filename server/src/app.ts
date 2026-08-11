@@ -8,6 +8,7 @@ import { authenticate } from "./auth";
 import { handleMcp } from "./mcp";
 import { handleGitHubWebhook } from "./webhook";
 import { handleV1Call } from "./http-api";
+import { handleDashboard, handleDashboardDismiss } from "./dashboard";
 import { budgetFor, principalLimited } from "./budgets";
 import {
   authorizationServerMetadata,
@@ -142,6 +143,13 @@ export function createFetch(cfg: Config): (req: Request) => Response | Promise<R
 
     if (url.pathname === "/v1/call") {
       return handleV1Call(req, cfg);
+    }
+
+    if (url.pathname === "/dashboard" && req.method === "GET") {
+      return handleDashboard(req, cfg);
+    }
+    if (url.pathname === "/dashboard/dismiss" && req.method === "POST") {
+      return handleDashboardDismiss(req, cfg);
     }
 
     if (url.pathname === "/mcp") {

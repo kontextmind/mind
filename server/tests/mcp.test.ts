@@ -789,6 +789,58 @@ describeMaybe("MCP end-to-end + HTTP isolation", () => {
     expect(unknown.body.result.error).toContain("unknown tool");
   });
 
+  test("dashboard: auth-gated, panels render from evidence", async () => {
+    const base = baseUrl.replace(/\/mcp$/, "");
+    const noTok = await fetch(`${base}/dashboard`);
+    expect(noTok.status).toBe(401);
+    const res = await fetch(`${base}/dashboard`, {
+      headers: { authorization: "Bearer km-demo-local" },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Every panel carries its decision — the repo's own law.
+    expect(html).toContain("Trailer coverage");
+    expect(html).toContain("Active sessions (7d)");
+    expect(html).toContain("Pending insights");
+    expect(html).toContain("Index freshness");
+    expect(html).toContain("Recent evidence");
+    expect(html).toContain("Decision it drives");
+    expect(html).not.toContain("{{FLASH}}");
+  });
+
+  test("dashboard: dismiss posts a verdict through the standard dispatch", async () => {
+    const base = baseUrl.replace(/\/mcp$/, "");
+    // A pending insight exists by now (the empty-search gap, filed earlier).
+    const list = await fetch(`${base}/v1/call`, {
+      method: "POST",
+      headers: { authorization: "Bearer km-demo-local", "content-type": "application/json" },
+      body: JSON.stringify({ tool: "km_insights", args: {} }),
+    });
+    const listed = ((await list.json()) as any).result.insights ?? [];
+    expect(listed.length).toBeGreaterThan(0);
+    const target = listed[0];
+    const form = new URLSearchParams({
+      token: "km-demo-local",
+      id: target.id,
+      verdict: "accepted",
+      reason: "",
+    });
+    const res = await fetch(`${base}/dashboard/dismiss`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("verdict recorded");
+    const after = await fetch(`${base}/v1/call`, {
+      method: "POST",
+      headers: { authorization: "Bearer km-demo-local", "content-type": "application/json" },
+      body: JSON.stringify({ tool: "km_insights", args: {} }),
+    });
+    const remaining = ((await after.json()) as any).result.insights ?? [];
+    expect(remaining.find((i: any) => i.id === target.id)).toBeUndefined();
+  });
+
   test("CLI fast path: kontext search runs over /v1 end to end", async () => {
     // ASYNC spawn, never spawnSync: the child talks to THIS suite's
     // in-process server — spawnSync would block the event loop and deadlock
