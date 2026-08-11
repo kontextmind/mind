@@ -1,4 +1,4 @@
-# @kontext-mind/cli
+# @kontextmind/cli
 
 The CLI for [KontextMind](https://github.com/kontext-mind/mind) — the
 persistent mind behind every AI agent: memory + work context + workflow
@@ -7,7 +7,7 @@ intelligence, git-canonical and self-hostable.
 ## Install
 
 ```bash
-npm install -g @kontext-mind/cli   # provides `kontext`
+npm install -g @kontextmind/cli   # provides `kontext`
 ```
 
 Node ≥ 18.17 required (the published bundle is plain ESM; no Bun needed).

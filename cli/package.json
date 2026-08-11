@@ -1,5 +1,5 @@
 {
-  "name": "@kontext-mind/cli",
+  "name": "@kontextmind/cli",
   "version": "0.1.0",
   "description": "kontext — connect any project to KontextMind, the persistent mind behind every AI agent",
   "license": "Apache-2.0",
